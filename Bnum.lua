@@ -2540,4 +2540,45 @@ function BN.maxBuy(val1: number, val2: number, multi: number)
 	return totalAmount, totalCost
 end
 
+function BN.percent(val1: any, val2: any): string
+	local result =  BN.mul(BN.div(val1, val2), 100)
+	return BN.format(BN.clamp(result, 0, 100)) .. '%'
+end
+
+function BN.linear(base: any, add: any, level: number): buffer
+	return BN.add(base , BN.mul(add, level))
+end
+
+function BN.softCap(val: any, cap: any, pow: any): buffer
+	if BN.cmp(val, cap) <= 0 then
+		return val
+	end
+	return BN.mul(cap, BN.pow(BN.div(val, cap), pow))
+end
+
+function BN.progress(curr: any, goal: any): buffer
+	if BN.leeq(goal, 0) then
+		return BN.fromNumber(1)
+	end
+	return BN.clamp(BN.div(curr, goal), 0, 1)
+end
+
+function BN.milestone(val: any, step: any, bonus: any): buffer
+	return BN.add(1, BN.mul(steps, BN.intdiv(val, step)))
+end
+
+function BN.eta(curr: any, goal: any, rate: any): buffer
+	if BN.leeq(rate, 0) then
+		return INF
+	end
+	return BN.div(BN.sub(goal, curr), rate)
+end
+
+function BN.dynamicCost(cost: any, owned: any, scale: any, methods: 'exp'|'linear'|'hybrid'): buffer
+	if methods == 'exp' then return BN.mul(cost, BN.pow(scale, owned)) end
+	if methods == 'linear' then return BN.add(cost, BN.mul(scale, owned)) end
+	if methods == 'hybrid' then return BN.add(BN.mul(cost, BN.pow(scale, owned)), BN.mul(scale, owned) end
+	return cost
+end
+
 return BN
