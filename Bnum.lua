@@ -101,7 +101,7 @@ function BN.toNumber(val: buffer): number
 	local sign, log = buffer.readi8(val, 0), buffer.readf64(val, 4)
 	local num = sign * 10^log
 	if num < 2^52 then
-		return math.round(num*10^50)
+		return math.round(num*10^50)/10^50
 	end
 	return num
 end
@@ -2556,15 +2556,8 @@ function BN.softCap(val: any, cap: any, pow: any): buffer
 	return BN.mul(cap, BN.pow(BN.div(val, cap), pow))
 end
 
-function BN.progress(curr: any, goal: any): buffer
-	if BN.leeq(goal, 0) then
-		return BN.fromNumber(1)
-	end
-	return BN.clamp(BN.div(curr, goal), 0, 1)
-end
-
 function BN.milestone(val: any, step: any, bonus: any): buffer
-	return BN.add(1, BN.mul(steps, BN.intdiv(val, step)))
+	return BN.add(1, BN.mul(step, BN.intdiv(val, step)))
 end
 
 function BN.eta(curr: any, goal: any, rate: any): buffer
@@ -2574,11 +2567,110 @@ function BN.eta(curr: any, goal: any, rate: any): buffer
 	return BN.div(BN.sub(goal, curr), rate)
 end
 
+function BN.isZero(val: any): boolean
+	return buffer.readi8(val, 0) == 0
+end
+
 function BN.dynamicCost(cost: any, owned: any, scale: any, methods: 'exp'|'linear'|'hybrid'): buffer
 	if methods == 'exp' then return BN.mul(cost, BN.pow(scale, owned)) end
 	if methods == 'linear' then return BN.add(cost, BN.mul(scale, owned)) end
-	if methods == 'hybrid' then return BN.add(BN.mul(cost, BN.pow(scale, owned)), BN.mul(scale, owned) end
+	if methods == 'hybrid' then return BN.add(BN.mul(cost, BN.pow(scale, owned)), BN.mul(scale, owned)) end
 	return cost
+end
+
+function BN.neg(val: any): buffer
+	local buff
+	if type(val) == "buffer" then
+		buff = val
+	else
+		buff = buffer.create(12)
+		local n
+		if type(val) == "string" then
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
+		elseif type(val) == "number" then
+			n = val
+		else
+			buffer.copy(buff, 0, NAN, 0, 12)
+		end
+		if n then
+			if n ~= n then
+				buffer.copy(buff, 0, NAN, 0, 12)
+			elseif n == 0 then
+				buffer.copy(buff, 0, ZERO, 0, 12)
+			elseif n == 1/0 or n == -1/0 then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				buffer.writei8(buff, 0, n > 0 and 1 or -1)
+				buffer.writef64(buff, 4, math.log10(math.abs(n)))
+			end
+		end
+	end
+	local sign = buffer.readi8(buff, 0)
+	local log = buffer.readf64(buff, 4)
+	local out = buffer.create(12)
+	if sign == 0 then
+		buffer.copy(out, 0, NAN, 0, 12)
+		return out
+	end
+	buffer.writei8(out, 0, -sign)
+	buffer.writef64(out, 4, log)
+	return out
+end
+
+type ScaleMode = 'linear'|'exp'|'dynamic'|'sigmoid'
+type ScaleCurve = 'linear'|'exp'|'sigmoid'
+
+function BN.scaleCurve(val1: any, base: any, exp: any, mode: ScaleMode): buffer
+	local diff = BN.sub(val1, base)
+	diff = BN.max(diff, 0)
+	if BN.isZero(diff) then
+		return BN.fromNumber(1)
+	end
+	local t = BN.div(diff, base)
+	if mode == 'linear' then
+		return BN.add(1, t)
+	elseif mode == 'exp' then
+		return BN.add(1, BN.pow(t, exp))
+	elseif mode == 'sigmoid' then
+		return BN.add(1, BN.div(1, BN.add(1, BN.exp(BN.neg(t)))))
+	end
+	return BN.add(1, BN.pow(t, exp))
+end
+
+function BN.progress(curr: any, goal: any, modes: ScaleMode?): buffer
+	if BN.leeq(goal, 0) then return 1 end
+	local ratio = BN.div(curr, goal)
+	ratio = BN.clamp(ratio, 0, 1)
+	if not modes or modes == 'linear' then
+		return BN.pow(ratio, 1.1)
+	elseif modes == 'exp' then
+		return BN.pow(ratio, 2)
+	elseif modes == 'dynamic' then
+		return BN.mul(ratio, BN.sub(3, BN.mul(ratio, 2)))
+	elseif modes == 'sigmoid' then
+		local k = 6
+		return BN.div(1, BN.add(1, BN.exp(BN.mul(-k, BN.sub(ratio, 0.5)))))
+	end
+	return ratio
 end
 
 return BN
