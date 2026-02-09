@@ -45,10 +45,27 @@ function BN.toStr(val: any): string
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -103,14 +120,27 @@ function BN.toNumber(val: any): number
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
-		elseif type(val) == "number" then
-			n = val
-		else
-			buffer.copy(buff, 0, NAN, 0, 12)
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		end
 		if n then
 			if n ~= n then
@@ -141,10 +171,26 @@ function BN.add(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -170,10 +216,26 @@ function BN.add(val1: any, val2: any): buffer
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -235,10 +297,26 @@ function BN.sub(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -259,15 +337,36 @@ function BN.sub(val1: any, val2: any): buffer
 	end
 	local buff2
 	if type(val2) == "buffer" then
-		buff2 = val2
+		buff2 = buffer.create(12)
+		local sign2 = buffer.readi8(val2, 0)
+		local log2  = buffer.readf64(val2, 4)
+		buffer.writei8(buff2, 0, -sign2)
+		buffer.writef64(buff2, 4, log2)
 	else
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+				buffer.writei8(buff2, 0, -1)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and -1 or 1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -280,8 +379,9 @@ function BN.sub(val1: any, val2: any): buffer
 				buffer.copy(buff2, 0, ZERO, 0, 12)
 			elseif n == 1/0 or n == -1/0 then
 				buffer.copy(buff2, 0, INF, 0, 12)
+				buffer.writei8(buff2, 0, -1)
 			else
-				buffer.writei8(buff2, 0, n > 0 and 1 or -1)
+				buffer.writei8(buff2, 0, n > 0 and -1 or 1)
 				buffer.writef64(buff2, 4, log10(abs(n)))
 			end
 		end
@@ -329,10 +429,26 @@ function BN.mul(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -358,10 +474,26 @@ function BN.mul(val1: any, val2: any): buffer
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -402,10 +534,26 @@ function BN.div(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -431,10 +579,26 @@ function BN.div(val1: any, val2: any): buffer
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -483,10 +647,26 @@ function BN.pow(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -512,10 +692,26 @@ function BN.pow(val1: any, val2: any): buffer
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -536,32 +732,37 @@ function BN.pow(val1: any, val2: any): buffer
 	end
 	local sign1, log1 = buffer.readi8(buff1, 0), buffer.readf64(buff1, 4)
 	local sign2, log2 = buffer.readi8(buff2, 0), buffer.readf64(buff2, 4)
-	local numericExponent = 10^log2
-	local outSign, outLog
-	if sign1 == -2 or sign2 == -2 then
-		return buffer.copy(buffer.create(12), 0, NAN, 0, 12)
-	elseif sign1 == 0 then
-		if sign2 == 0 then
-			outSign, outLog = 1, 0
-		else
-			return buffer.copy(buffer.create(12), 0, ZERO, 0, 12)
-		end
-	elseif sign2 == 0 then
-		outSign, outLog = 1, 0
-	else
-		if sign1 == -1 then
-			if numericExponent % 1 ~= 0 then
-				return buffer.copy(buffer.create(12), 0, NAN, 0, 12)
-			end
-			outSign = (numericExponent % 2 == 1) and -1 or 1
-		else
-			outSign = 1
-		end
-		outLog = log1 * numericExponent
-	end
 	local out = buffer.create(12)
-	buffer.writei8(out, 0, outSign)
-	buffer.writef64(out, 4, outLog or 0)
+	if sign1 == -2 or sign2 == -2 then
+		buffer.copy(out, 0, NAN, 0, 12)
+		return out
+	end
+	if sign1 == 0 then
+		if sign2 == 0 then
+			buffer.writei8(out, 0, 1)
+			buffer.writef64(out, 4, 0)
+			return out
+		else
+			buffer.copy(out, 0, ZERO, 0, 12)
+			return out
+		end
+	end
+	if sign2 == 0 then
+		buffer.writei8(out, 0, 1)
+		buffer.writef64(out, 4, 0)
+		return out
+	end
+	local numericExponent = 10^log2 * sign2
+	if sign1 == -1 then
+		if numericExponent % 1 ~= 0 then
+			buffer.copy(out, 0, NAN, 0, 12)
+			return out
+		end
+		buffer.writei8(out, 0, (numericExponent % 2 == 1) and -1 or 1)
+	else
+		buffer.writei8(out, 0, 1)
+	end
+	buffer.writef64(out, 4, log1 * numericExponent)
 	return out
 end
 
@@ -573,10 +774,27 @@ function BN.pow10(val: any): buffer
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -591,7 +809,7 @@ function BN.pow10(val: any): buffer
 				buffer.copy(buff, 0, INF, 0, 12)
 			else
 				buffer.writei8(buff, 0, n > 0 and 1 or -1)
-				buffer.writef64(buff, 4, math.log10(math.abs(n)))
+				buffer.writef64(buff, 4, log10(abs(n)))
 			end
 		end
 	end
@@ -625,10 +843,22 @@ function BN.sqrt(val: any): buffer
 			if s == "inf" then
 				buffer.copy(buff, 0, INF, 0, 12)
 			else
-				local e = string.find(val, 'e')
-				assert(val, 'Must have e format ex (1e3) not "1000"')
-				buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-				buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
 			end
 		elseif type(val) == "number" then
 			n = val
@@ -644,7 +874,7 @@ function BN.sqrt(val: any): buffer
 				buffer.copy(buff, 0, INF, 0, 12)
 			else
 				buffer.writei8(buff, 0, n > 0 and 1 or -1)
-				buffer.writef64(buff, 4, math.log10(math.abs(n)))
+				buffer.writef64(buff, 4, log10(abs(n)))
 			end
 		end
 	end
@@ -670,10 +900,26 @@ function BN.root(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -699,10 +945,26 @@ function BN.root(val1: any, val2: any): buffer
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -748,10 +1010,26 @@ function BN.cmp(val1: any, val2: any): number
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -777,10 +1055,26 @@ function BN.cmp(val1: any, val2: any): number
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -841,10 +1135,27 @@ function BN.log10(val: any): buffer
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -882,10 +1193,26 @@ function BN.log(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'Must use e ex (1e3) not 1000')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e+1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e-1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -923,10 +1250,26 @@ function BN.log(val1: any, val2: any): buffer
 			buff2 = buffer.create(12)
 			local n
 			if type(val2) == "string" then
-				local e = string.find(val2, 'e')
-				assert(val2, 'Must use e ex (1e3) not 1000')
-				buffer.writei8(buff1, 0, tonumber(string.sub(val2, 1, e+1)))
-				buffer.writef64(buff1, 4, tonumber(string.sub(val2, e-1)))
+				local s = val2:lower()
+				if s == "inf" then
+					buffer.copy(buff2, 0, INF, 0, 12)
+				else
+					local ePos = string.find(s, "e", 1, true)
+					if ePos then
+						local man = tonumber(string.sub(s, 1, ePos-1))
+						local exp = tonumber(string.sub(s, ePos+1))
+						if not man or not exp or man ~= man then
+							buffer.copy(buff2, 0, NAN, 0, 12)
+						elseif man == 0 then
+							buffer.copy(buff2, 0, ZERO, 0, 12)
+						else
+							buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+							buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+						end
+					else
+						n = tonumber(s)
+					end
+				end
 			elseif type(val2) == "number" then
 				n = val2
 			else
@@ -973,10 +1316,22 @@ function BN.exp(val: any): buffer
 			if s == "inf" then
 				buffer.copy(buff, 0, INF, 0, 12)
 			else
-				local e = string.find(val, 'e')
-				assert(val, 'Must have e format ex (1e3) not "1000"')
-				buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-				buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
 			end
 		elseif type(val) == "number" then
 			n = val
@@ -992,7 +1347,7 @@ function BN.exp(val: any): buffer
 				buffer.copy(buff, 0, INF, 0, 12)
 			else
 				buffer.writei8(buff, 0, n > 0 and 1 or -1)
-				buffer.writef64(buff, 4, math.log10(math.abs(n)))
+				buffer.writef64(buff, 4, log10(abs(n)))
 			end
 		end
 	end
@@ -1015,10 +1370,26 @@ function BN.random(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -1044,10 +1415,26 @@ function BN.random(val1: any, val2: any): buffer
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -1088,10 +1475,27 @@ function BN.min(...: any): buffer
 			buff = buffer.create(12)
 			local n
 			if type(val) == "string" then
-				local e = string.find(val, 'e')
-				assert(val, 'Must have e format ex (1e3) not "1000"')
-				buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-				buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+				local s = val:lower()
+				if s == "inf" then
+					buffer.copy(buff, 0, INF, 0, 12)
+				else
+					local ePos = string.find(s, "e", 1, true)
+					if ePos then
+						local man = tonumber(string.sub(s, 1, ePos-1))
+						local exp = tonumber(string.sub(s, ePos+1))
+						if not man or not exp or man ~= man then
+							buffer.copy(buff, 0, NAN, 0, 12)
+						elseif man == 0 then
+							buffer.copy(buff, 0, ZERO, 0, 12)
+						else
+							local sign = man > 0 and 1 or -1
+							buffer.writei8(buff, 0, sign)
+							buffer.writef64(buff, 4, log10(abs(man)) + exp)
+						end
+					else
+						n = tonumber(s)
+					end
+				end
 			elseif type(val) == "number" then
 				n = val
 			else
@@ -1133,10 +1537,27 @@ function BN.max(...: any): buffer
 			buff = buffer.create(12)
 			local n
 			if type(val) == "string" then
-				local e = string.find(val, 'e')
-				assert(val, 'Must have e format ex (1e3) not "1000"')
-				buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-				buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+				local s = val:lower()
+				if s == "inf" then
+					buffer.copy(buff, 0, INF, 0, 12)
+				else
+					local ePos = string.find(s, "e", 1, true)
+					if ePos then
+						local man = tonumber(string.sub(s, 1, ePos-1))
+						local exp = tonumber(string.sub(s, ePos+1))
+						if not man or not exp or man ~= man then
+							buffer.copy(buff, 0, NAN, 0, 12)
+						elseif man == 0 then
+							buffer.copy(buff, 0, ZERO, 0, 12)
+						else
+							local sign = man > 0 and 1 or -1
+							buffer.writei8(buff, 0, sign)
+							buffer.writef64(buff, 4, log10(abs(man)) + exp)
+						end
+					else
+						n = tonumber(s)
+					end
+				end
 			elseif type(val) == "number" then
 				n = val
 			else
@@ -1174,10 +1595,27 @@ function BN.floor(val: any): buffer
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -1231,10 +1669,27 @@ function BN.ceil(val: any): buffer
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -1289,10 +1744,27 @@ function BN.round(val: any): buffer
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -1347,10 +1819,26 @@ function BN.mod(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -1376,10 +1864,26 @@ function BN.mod(val1: any, val2: any): buffer
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -1436,10 +1940,27 @@ function BN.lbencode(val: any): number
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						local sign = man > 0 and 1 or -1
+						buffer.writei8(buff, 0, sign)
+						buffer.writef64(buff, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -1510,10 +2031,26 @@ function BN.format(val: any, digits: number?, hyperAt: number?): string
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -1572,10 +2109,26 @@ function BN.modf(val: any): (buffer, buffer)
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -1636,10 +2189,26 @@ function BN.fmod(val1: any, val2: any): buffer
 		buff1 = buffer.create(12)
 		local n
 		if type(val1) == "string" then
-			local e = string.find(val1, 'e')
-			assert(val1, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			local s = val1:lower()
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -1665,10 +2234,26 @@ function BN.fmod(val1: any, val2: any): buffer
 		buff2 = buffer.create(12)
 		local n
 		if type(val2) == "string" then
-			local e = string.find(val2, 'e')
-			assert(val2, 'must use ex ("1e3") cant use "1203"')
-			buffer.writei8(buff2, 0, tonumber(string.sub(val2, 1, e+1)))
-			buffer.writef64(buff2, 4, tonumber(string.sub(val2, e+1)))
+			local s = val2:lower()
+			if s == "inf" then
+				buffer.copy(buff2, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff2, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff2, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff2, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff2, 4, log10(abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val2) == "number" then
 			n = val2
 		else
@@ -1738,10 +2323,25 @@ function BN.clamp(val1: any, min: any, max: any): buffer
 		local n
 		if type(val1) == "string" then
 			local s = val1:lower()
-			local e = string.find(val1, 'e')
-			assert(val1, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff1, 0, tonumber(string.sub(val1, 1, e-1)))
-			buffer.writef64(buff1, 4, tonumber(string.sub(val1, e+1)))
+			if s == "inf" then
+				buffer.copy(buff1, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff1, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff1, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff1, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff1, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val1) == "number" then
 			n = val1
 		else
@@ -1767,10 +2367,26 @@ function BN.clamp(val1: any, min: any, max: any): buffer
 		buffMin = buffer.create(12)
 		local n
 		if type(min) == "string" then
-			local e = string.find(min, 'e')
-			assert(min, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buffMin, 0, tonumber(string.sub(min, 1, e-1)))
-			buffer.writef64(buffMin, 4, tonumber(string.sub(min, e+1)))
+			local s = min:lower()
+			if s == "inf" then
+				buffer.copy(buffMin, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buffMin, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buffMin, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buffMin, 0, man > 0 and 1 or -1)
+						buffer.writef64(buffMin, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(min) == "number" then
 			n = min
 		else
@@ -1796,10 +2412,26 @@ function BN.clamp(val1: any, min: any, max: any): buffer
 		buffMax = buffer.create(12)
 		local n
 		if type(max) == "string" then
-			local e = string.find(buffMax, 'e')
-			assert(buffMax, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buffMax, 0, tonumber(string.sub(buffMax, 1, e-1)))
-			buffer.writef64(buffMax, 4, tonumber(string.sub(buffMax, e+1)))
+			local s = max:lower()
+			if s == "inf" then
+				buffer.copy(buffMax, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buffMax, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buffMax, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buffMax, 0, man > 0 and 1 or -1)
+						buffer.writef64(buffMax, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(max) == "number" then
 			n = max
 		else
@@ -1854,10 +2486,26 @@ function BN.abs(val: any): buffer
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -1891,10 +2539,26 @@ function BN.cbrt(val: any): buffer
 		buff = buffer.create(12)
 		local n
 		if type(val) == "string" then
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -1981,10 +2645,25 @@ function BN.neg(val: any): buffer
 		local n
 		if type(val) == "string" then
 			local s = val:lower()
-			local e = string.find(val, 'e')
-			assert(val, 'Must have e format ex (1e3) not "1000"')
-			buffer.writei8(buff, 0, tonumber(string.sub(val, 1, e-1)))
-			buffer.writef64(buff, 4, tonumber(string.sub(val, e+1)))
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
 		elseif type(val) == "number" then
 			n = val
 		else
@@ -2052,21 +2731,16 @@ function BN.progress(curr: any, goal: any, modes: ScaleMode?): buffer
 	return ratio
 end
 
-function BN.imod(val1: any, val2: any): buffer
-	return BN.sub(val1, BN.mul(BN.intdiv(val1, val2), val2))
-end
-
 function BN.timeConvert(val: any): string
 	if BN.leeq(val, 0) then
 		return "0s"
 	end
+
 	local out = {}
 	local days = BN.floor(BN.div(val, 86400))
-	val = BN.imod(val, 86400)
-	local hrs = BN.floor(BN.div(val, 3600))
-	val = BN.imod(val, 3600)
-	local min = BN.floor(BN.div(val, 60))
-	local secs = BN.imod(val, 60)
+	local hrs = BN.fmod(BN.floor(BN.div(val, 3600)), 24)
+	local min = BN.fmod(BN.floor(BN.div(val, 60)), 60)
+	local secs = BN.fmod(val, 60)
 	local s = ''
 	if not BN.isZero(days) then
 		s ..= BN.format(days) .. 'd:'
@@ -2075,9 +2749,9 @@ function BN.timeConvert(val: any): string
 		s ..= BN.format(hrs) .. 'h:'
 	end
 	if not BN.isZero(min) or not BN.isZero(hrs) or not BN.isZero(days) then
-		s ..= BN.format(min) .. 'm:'
+		s ..= BN.format(min) .. 'm'
 	end
-	s ..= BN.format(secs) .. 's:'
+	s ..= BN.format(secs) .. 's'
 	return s
 end
 
