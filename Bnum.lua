@@ -272,13 +272,14 @@ function BN.add(val1: any, val2: any): buffer
 	if sign1 == sign2 then
 		buffer.writei8(out, 0, sign1)
 		buffer.writef64(out, 4, log10(10^(diff) + 1) + exp2)
+	else
+		if diff >= 0 then
+			buffer.writei8(out, 0, sign1)
+			buffer.writef64(out, 4, exp1 + log10(1 - 10^(-diff)))
+		end
+		buffer.writei8(out, 0, sign2)
+		buffer.writef64(out, 4, exp2 + log10(1 - 10^(diff)))
 	end
-	if diff >= 0 then
-		buffer.writei8(out, 0, sign1)
-		buffer.writef64(out, 4, exp1 + log10(1 - 10^(-diff)))
-	end
-	buffer.writei8(out, 0, sign2)
-	buffer.writef64(out, 4, exp2 + log10(1 - 10^(diff)))
 	return out
 end
 
