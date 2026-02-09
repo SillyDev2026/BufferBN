@@ -32,7 +32,7 @@ function BN.new(man: number, exp: number): buffer
 		buffer.copy(out, 0, ZERO, 0, 12)
 		return out
 	end
-	buffer.writei8(out, 0, math.sign(man))
+	buffer.writei8(out, 0, man>0 and 1 or -1)
 	buffer.writef64(out, 4, math.log10(man)+exp)
 	return out
 end
@@ -106,9 +106,8 @@ function BN.fromNumber(val: number): buffer
 	elseif val ~= val then		
 		buffer.copy(out, 0, NAN, 0, 12)
 	end
-	local sign = math.sign(val)
-	buffer.writei8(out, 0, sign)
-	buffer.writef64(out, 4, math.log10(math.abs(val)))
+	buffer.writei8(out, 0, val>0 and 1 or -1)
+	buffer.writef64(out, 4, math.log10(val>= 0 and val or -val))
 	return out
 end
 
@@ -155,10 +154,10 @@ function BN.toNumber(val: any): number
 			end
 		end
 	end
-	local sign, log = buffer.readi8(val, 0), buffer.readf64(val, 4)
-	local num = sign * (10^log)//1
+	local sign, log = buffer.readi8(buff, 0), buffer.readf64(buff, 4)
+	local num = sign * (10^log)
 	if num < 2^52 then
-		return (num*100+0.001)/100
+		return ((num*100+0.001)/100)//1
 	end
 	return num
 end
@@ -254,20 +253,16 @@ function BN.add(val1: any, val2: any): buffer
 			end
 		end
 	end
-	local sign1 = buffer.readi8(buff1, 0)
-	local exp1  = buffer.readf64(buff1, 4)
-	local sign2 = buffer.readi8(buff2, 0)
-	local exp2  = buffer.readf64(buff2, 4)
+	local sign1, exp1 = buffer.readi8(buff1, 0), buffer.readf64(buff1, 4)
+	local sign2, exp2 = buffer.readi8(buff2, 0), buffer.readf64(buff2, 4)
 	if sign1 == -2 or sign2 == -2 then
 		local out = buffer.create(12)
 		buffer.copy(out, 0, NAN, 0, 12)
 		return out
 	end
-	if sign1 == 0 then return buff2 end
-	if sign2 == 0 then return buff1 end
+	if sign1 == 0 then return buff2 elseif sign2 == 0 then return buff1 end
 	local diff = exp1 - exp2
-	if diff > 16 then return buff1 end
-	if diff < -16 then return buff2 end
+	if diff > 16 then return buff1 elseif diff < -16 then return buff2 end
 	if diff == 0 and sign1 ~= sign2 then
 		local out = buffer.create(12)
 		buffer.copy(out, 0, ZERO, 0, 12)
@@ -277,15 +272,13 @@ function BN.add(val1: any, val2: any): buffer
 	if sign1 == sign2 then
 		buffer.writei8(out, 0, sign1)
 		buffer.writef64(out, 4, log10(10^(diff) + 1) + exp2)
-	else
-		if diff >= 0 then
-			buffer.writei8(out, 0, sign1)
-			buffer.writef64(out, 4, exp1 + log10(1 - 10^(-diff)))
-		else
-			buffer.writei8(out, 0, sign2)
-			buffer.writef64(out, 4, exp2 + log10(1 - 10^(diff)))
-		end
 	end
+	if diff >= 0 then
+		buffer.writei8(out, 0, sign1)
+		buffer.writef64(out, 4, exp1 + log10(1 - 10^(-diff)))
+	end
+	buffer.writei8(out, 0, sign2)
+	buffer.writef64(out, 4, exp2 + log10(1 - 10^(diff)))
 	return out
 end
 
@@ -1989,8 +1982,8 @@ function BN.lbencode(val: any): number
 	else
 		logAbs = log10(10^log+1)
 	end
-	if logAbs > 308.25471555991675 then
-		logAbs = 308.25471555991675
+	if logAbs > 1.7976931348623157e308 then
+		logAbs = 1.7976931348623157e308
 	end
 	if logAbs <= 0 then
 		return 0
@@ -2731,28 +2724,96 @@ function BN.progress(curr: any, goal: any, modes: ScaleMode?): buffer
 	return ratio
 end
 
-function BN.timeConvert(val: any): string
-	if BN.leeq(val, 0) then
-		return "0s"
-	end
+function BN.imod(val1: any, val2: any): buffer
+	return BN.sub(val1, BN.mul(BN.intdiv(val1, val2), val2))
+end
 
-	local out = {}
-	local days = BN.floor(BN.div(val, 86400))
-	local hrs = BN.fmod(BN.floor(BN.div(val, 3600)), 24)
-	local min = BN.fmod(BN.floor(BN.div(val, 60)), 60)
-	local secs = BN.fmod(val, 60)
-	local s = ''
-	if not BN.isZero(days) then
-		s ..= BN.format(days) .. 'd:'
+function BN.timeConvert(val: any): string
+	if BN.leeq(val, 0) then return "0s"	end
+	local year = 365*24*60*60
+	local units = {
+		{name = 'Ga', seconds = year*1e9},
+		{name = 'Ma', seconds = year*1e6},
+		{ name = 'mi', seconds = year*1000},
+		{ name = "c", seconds = year * 100 },
+		{ name = "dc", seconds = year * 10 },
+		{ name = "yr", seconds = year },
+		{ name = "mo", seconds = 30*24*60*60 },
+		{ name = "w", seconds = 7*24*60*60 },
+		{ name = "d", seconds = 24*60*60 },
+		{ name = "h", seconds = 3600 },
+		{ name = "m", seconds = 60 },
+		{ name = "s", seconds = 1 },
+	}
+	local s = ""
+	for _, unit in ipairs(units) do
+		local amount
+		if unit.seconds > 1 then
+			amount = BN.intdiv(val, unit.seconds)
+			val = BN.imod(val, unit.seconds)
+		else
+			amount = val
+		end
+		if not BN.isZero(amount)then
+			s ..= BN.format(amount) .. unit.name .. ":"
+		end
 	end
-	if not BN.isZero(hrs) or not BN.isZero(days) then
-		s ..= BN.format(hrs) .. 'h:'
+	if s == '' then
+		s = '0s'
+	else
+		s = s:sub(1, -2)
 	end
-	if not BN.isZero(min) or not BN.isZero(hrs) or not BN.isZero(days) then
-		s ..= BN.format(min) .. 'm'
-	end
-	s ..= BN.format(secs) .. 's'
 	return s
+end
+
+function BN.toScience(val: any): string
+	local buff
+	if type(val) == "buffer" then
+		buff = val
+	else
+		buff = buffer.create(12)
+		local n
+		if type(val) == "string" then
+			local s = val:lower()
+			if s == "inf" then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				local ePos = string.find(s, "e", 1, true)
+				if ePos then
+					local man = tonumber(string.sub(s, 1, ePos-1))
+					local exp = tonumber(string.sub(s, ePos+1))
+					if not man or not exp or man ~= man then
+						buffer.copy(buff, 0, NAN, 0, 12)
+					elseif man == 0 then
+						buffer.copy(buff, 0, ZERO, 0, 12)
+					else
+						buffer.writei8(buff, 0, man > 0 and 1 or -1)
+						buffer.writef64(buff, 4, math.log10(math.abs(man)) + exp)
+					end
+				else
+					n = tonumber(s)
+				end
+			end
+		elseif type(val) == "number" then
+			n = val
+		else
+			buffer.copy(buff, 0, NAN, 0, 12)
+		end
+		if n then
+			if n ~= n then
+				buffer.copy(buff, 0, NAN, 0, 12)
+			elseif n == 0 then
+				buffer.copy(buff, 0, ZERO, 0, 12)
+			elseif n == 1/0 or n == -1/0 then
+				buffer.copy(buff, 0, INF, 0, 12)
+			else
+				buffer.writei8(buff, 0, n > 0 and 1 or -1)
+				buffer.writef64(buff, 4, math.log10(math.abs(n)))
+			end
+		end
+	end
+	local sign, log = buffer.readi8(buff, 0), buffer.readf64(buff, 4)
+	return sign .. 'e' .. log
 end
 
 return BN
