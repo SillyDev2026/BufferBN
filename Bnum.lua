@@ -620,7 +620,7 @@ function module.format(val: any, digits: number?, hyperAt: number?): string
 		local c = (i // 100) % 10
 		return scaled .. firstset[a+1] .. second[b+1] .. third[c+1]
 	end
-	if exp < -1 then
+	if exp < -3 then
 		local index = math.floor(-exp / 3)
 		local rem = -exp % 3
 		local scaled = 10^rem
@@ -636,7 +636,7 @@ function module.format(val: any, digits: number?, hyperAt: number?): string
 		return '1/' .. scaled .. firstset[a+1] .. second[b+1] .. third[c+1]
 	end
 	local scale = 10^exp * sign
-	scale = math.floor(scale * 10^digits + 0.5) / 10^digits
+	scale = math.floor(scale * 10^digits + 0.001) / 10^digits
 	return tostring(scale)
 end
 
@@ -746,13 +746,19 @@ function module.scaleCurve(val1: any, base: any, exp: any, mode: ScaleMode): buf
 		return val1
 	end
 	if mode == "sigmoid" then
+		if tLog > 2 then
+			buffer.writei8(val1, 0, 1)
+			buffer.writef64(val1, 4, tLog)
+			return val1
+		end
 		local t = 10^tLog
 		local sig = 1 / (1 + math.exp(-t))
-		local result = 1 + sig
+		local result = t * sig
 		buffer.writei8(val1, 0, 1)
 		buffer.writef64(val1, 4, math.log10(result))
 		return val1
 	end
+
 	local exVal = s3 * 10^l3
 	local powLog = tLog * exVal
 	if powLog > 16 then
@@ -762,6 +768,109 @@ function module.scaleCurve(val1: any, base: any, exp: any, mode: ScaleMode): buf
 		buffer.writei8(val1, 0, 1)
 		buffer.writef64(val1, 4, math.log10(10^powLog + 1))
 	end
+	return val1
+end
+
+function module.progress(val1: any, goal: any, modes: ScaleMode)
+	val1, goal = module.ensure(val1), module.ensure(goal)
+	local s1, l1 = buffer.readi8(val1, 0), buffer.readf64(val1, 4)
+	local s2, l2 = buffer.readi8(goal, 0), buffer.readf64(goal, 4)
+	if l2 <= 0 then
+		buffer.writei8(val1, 0, 1)
+		buffer.writef64(val1, 4, 0)
+		return val1
+	end
+	local ratio
+	if s1 == 0 then
+		ratio = 0
+	else
+		ratio = s1 / s2 * 10^(l1 - l2)
+	end
+	if ratio < 0 then ratio = 0 elseif ratio > 1 then ratio = 1 end
+	local scale
+	modes = modes or 'linear'
+	if modes == 'linear' then
+		scale = ratio ^1.1
+	elseif modes == 'exp' then
+		scale = ratio ^2
+	elseif modes == 'sigmoid' then
+		scale = 1/(1+math.exp(-6*(ratio-0.5)))
+	else
+		scale = ratio
+	end
+	if scale == 0 then
+		buffer.copy(val1, 0, ZERO,0 ,12)
+	else
+		buffer.writei8(val1, 0, 1)
+		buffer.writef64(val1, 4, math.log10(math.abs(scale)))
+	end
+	return val1
+end
+
+function module.imod(val1: any, val2: any): buffer
+	val1, val2 = module.ensure(val1), module.ensure(val2)
+	local s1, l1 = buffer.readi8(val1, 0), buffer.readf64(val1, 4)
+	local s2, l2 = buffer.readi8(val2, 0), buffer.readf64(val2, 4)
+	if s2 == 0 then
+		buffer.copy(val1, 0, NAN, 0, 12)
+		return val1
+	end
+	if l1 < l2 or (l1 == l2 and s1 < s2) then
+		return val1
+	end
+	local diff = l1-l2
+	local div = math.floor(10^diff*(s1/s2)+0.001)
+	if div == 0 then return val1 end
+	local fact = div*s2/s1*10^(l2-l1)
+	local rems, remlog
+	if fact >= 1 then
+		buffer.copy(val1, 0, ZERO, 0, 12)
+		return val1
+	else
+		rems = s1
+		remlog = l1+math.log10(1-fact)
+		buffer.writei8(val1, 0, rems)
+		buffer.writef64(val1, 4, remlog)
+	end
+	return val1
+end
+
+function module.intdiv(val1: any, val2: any): buffer
+	val1, val2 = module.ensure(val1), module.ensure(val2)
+	local sign1, log1 = buffer.readi8(val1, 0), buffer.readf64(val1, 4)
+	local sign2, log2 = buffer.readi8(val2, 0), buffer.readf64(val2, 4)
+	if sign1 == -2 or sign2 == -2 then
+		buffer.copy(val1, 0, NAN, 0, 12)
+		return val1
+	end
+	if sign1 == 0 or sign2 == 0 then
+		buffer.copy(val1, 0, ZERO, 0, 12)
+		return val1
+	end
+	local sign = sign1/sign2
+	local log = log1-log2
+	if log < 0 then
+		buffer.copy(val1, 0, ZERO, 0, 12)
+		return val1
+	end
+	if log >= 16 then
+		buffer.writei8(val1, 0, sign)
+		buffer.writef64(val1, 4, log)
+		return val1
+	end
+	local diff = 10^log
+	if sign == -1 then
+		diff = -diff
+		diff = math.floor(diff)
+	else
+		diff = math.floor(diff)
+	end
+	if diff == 0 then
+		buffer.copy(val1, 0, ZERO, 0, 12)
+		return val1
+	end
+	buffer.writei8(val1, 0, math.sign(diff))
+	buffer.writef64(val1, 4, math.log10(math.abs(diff)))
 	return val1
 end
 
