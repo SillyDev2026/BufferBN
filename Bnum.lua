@@ -807,6 +807,42 @@ function module.progress(val1: any, goal: any, modes: ScaleMode)
 	return val1
 end
 
+function module.modf(val: any): (buffer, buffer)
+	val = module.ensure(val)
+	local sign, log = buffer.readi8(val, 0), buffer.readf64(val, 4)
+	local int, frac = buffer.create(12), buffer.create(12)
+	if log ~= log then
+		buffer.copy(int, 0, NAN, 0, 12)
+		buffer.copy(frac, 0, NAN, 0, 12)
+		return int, frac
+	end
+	if log == math.huge then
+		buffer.copy(int, 0, val, 0, 12)
+		buffer.copy(frac, 0, ZERO, 0, 12)
+		return int, frac
+	end
+	if log < 0 then
+		buffer.copy(int, 0, ZERO, 0, 12)
+		buffer.copy(frac, 0, val, 0, 12)
+		return int, frac
+	end
+	buffer.copy(int, 0, val, 0, 12)
+	buffer.copy(frac, 0, ZERO, 0, 12)
+	return int, frac
+end
+
+function module.encodeData(new: any, old: any): number
+	local newEncode = module.lbencode(new)
+	local newData = module.lbdecode(newEncode)
+	if old then
+		local oldData = module.lbdecode(old)
+		if module.cmp(oldData, newData) > 0 then
+			return oldData
+		end
+	end
+	return newData
+end
+
 function module.imod(val1: any, val2: any): buffer
 	val1, val2 = module.ensure(val1), module.ensure(val2)
 	local s1, l1 = buffer.readi8(val1, 0), buffer.readf64(val1, 4)
@@ -872,6 +908,118 @@ function module.intdiv(val1: any, val2: any): buffer
 	buffer.writei8(val1, 0, math.sign(diff))
 	buffer.writef64(val1, 4, math.log10(math.abs(diff)))
 	return val1
+end
+
+function module.clamp(val1: any, min: any, max: any): buffer
+	val1, min, max = module.ensure(val1), module.ensure(min), module.ensure(max)
+	local signX, logX = buffer.readi8(val1, 0), buffer.readf64(val1, 4)
+	local signMin, logMin = buffer.readi8(min, 0), buffer.readf64(min, 4)
+	local signMax, logMax = buffer.readi8(max, 0), buffer.readf64(max, 4)
+	local cmpMin
+	if signX ~= signMin then
+		cmpMin = signX > signMin and 1 or -1
+	else
+		if signX >= 0 then
+			cmpMin = logX > logMin and 1 or (logX < logMin and -1 or 0)
+		else
+			cmpMin = logX < logMin and 1 or (logX > logMin and -1 or 0)
+		end
+	end
+	if cmpMin < 0 then return min end
+	local cmpMax
+	if signX ~= signMax then
+		cmpMax = signX > signMax and 1 or -1
+	else
+		if signX >= 0 then
+			cmpMax = logX > logMax and 1 or (logX < logMax and -1 or 0)
+		else
+			cmpMax = logX < logMax and 1 or (logX > logMax and -1 or 0)
+		end
+	end
+	if cmpMax > 0 then return max end
+	return val1
+end
+
+function module.dynamicCost(cost: any, owned: any, scale: any, method: 'exp'|'linear'|'hybrid'): buffer
+	cost, owned, scale = module.ensure(cost), module.ensure(owned), module.ensure(scale)
+	local signC, logC = buffer.readi8(cost, 0), buffer.readf64(cost, 4)
+	local signO, logO = buffer.readi8(owned, 0), buffer.readf64(owned, 4)
+	local signS, logS = buffer.readi8(scale, 0), buffer.readf64(scale, 4)
+	local resLog = 0
+	if method == 'exp' then
+		resLog = logC + logO * logS
+	elseif method == 'linear' then
+		local ratio = 10^(logS + logO - logC)
+		if ratio > 1e16 then
+			resLog = logS + logO
+		else
+			resLog = logC + math.log10(1 + ratio)
+		end
+	elseif method == 'hybrid' then
+		local expPart = logC + logO * logS
+		local linearPart = logS + logO
+		if expPart > linearPart then
+			local ratio = 10^(linearPart - expPart)
+			if ratio > 1e16 then
+				resLog = linearPart
+			else
+				resLog = expPart + math.log10(1 + ratio)
+			end
+		else
+			local ratio = 10^(expPart - linearPart)
+			if ratio > 1e16 then
+				resLog = expPart
+			else
+				resLog = linearPart + math.log10(1 + ratio)
+			end
+		end
+	end
+	buffer.writei8(cost, 0, 1)
+	buffer.writef64(cost, 4, resLog)
+	return cost
+end
+
+function module.abs(val: any): buffer
+	val = module.ensure(val)
+	buffer.writei8(val, 0, math.abs(buffer.readi8(val, 0)))
+	buffer.writef64(val, 4, buffer.readf64(val, 4))
+	return val
+end
+
+function module.eta(curr: any, goal: any, rate: any): buffer
+	curr, goal, rate = module.ensure(curr), module.ensure(goal), module.ensure(rate)
+	local signC, logC = buffer.readi8(curr, 0), buffer.readf64(curr, 4)
+	local signG, logG = buffer.readi8(goal, 0), buffer.readf64(goal, 4)
+	local signR, logR = buffer.readi8(rate, 0), buffer.readf64(rate, 4)
+	if module.leeq(rate, 0) then
+		buffer.writei8(curr, 0, 1)
+		buffer.writef64(curr, 4, 1e16)
+		return curr
+	end
+	local diffLog
+	if signC ~= signG then
+		diffLog = math.max(logC, logG)
+	else
+		if signC >= 0 then
+			local ratio = 10^(logC - logG)
+			if ratio > 1e16 then
+				diffLog = logC
+			else
+				diffLog = logG + math.log10(1 - ratio)
+			end
+		else
+			local ratio = 10^(logG - logC)
+			if ratio > 1e16 then
+				diffLog = logG
+			else
+				diffLog = logC + math.log10(1 - ratio)
+			end
+		end
+	end
+	local etaLog = diffLog - logR
+	buffer.writei8(curr, 0, 1)
+	buffer.writef64(curr, 4, etaLog)
+	return curr
 end
 
 return module
