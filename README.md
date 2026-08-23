@@ -1,169 +1,292 @@
-# Bnum v1.1.0
+# Bnum v1.2.0
 
-A high-performance big-number library for Roblox/Luau built around a compact 12-byte `buffer` representation.
+A high-performance big-number library for Roblox/Luau built around a compact **12-byte `buffer` representation**.
 
-Bnum stores a number as:
+Bnum is designed for simulator, incremental, clicker, economy, leaderboard, and other Roblox systems that need values far beyond normal floating-point display ranges without turning every math operation into string arithmetic.
 
 ```text
-sign × 10^logMagnitude
+Version:         1.2.0
+Storage Version: 1
+Buffer Size:     12 bytes
+Representation:  sign × 10^logMagnitude
 ```
-
-Instead of keeping the full decimal value in a normal Lua number, Bnum stores the sign and the base-10 logarithm of the magnitude. This makes it practical to work with values far beyond ordinary floating-point display ranges while keeping the representation small and fast.
-
-Bnum v1.1.0 is designed around direct buffer-native calls. Core math functions do not call `ensure()` internally, which keeps hot-path overhead low.
 
 ---
 
-## Features
+## Highlights
 
-- 12-byte `buffer` representation
-- Fast arithmetic and comparisons
-- Buffer reuse and in-place math APIs
-- Scientific and suffix formatting
-- Extended suffix generation
-- OrderedDataStore encoding/decoding
-- Large-number economy helpers
-- Progress, scaling, ETA, and dynamic cost helpers
-- NaN and infinity handling
-- Explicit compatibility API for numbers and strings
+- 12-byte buffer-backed numbers
+- Extremely large and tiny values
+- Buffer-native hot-path API
+- Allocating, reusable-buffer, and in-place arithmetic
+- Fast comparisons
+- Scientific parsing and serialization
+- Compact suffix notation
+- New exponent-suffix notation
+- Geometric Max Buy
+- Limited Max Buy / Buy 1 / Buy 2 / Buy 10 support
+- Bulk cost and next-cost helpers
+- Soft caps, milestones, scaling, progress, ETA, and dynamic costs
+- Ordered leaderboard encoding helpers
+- NaN and infinity support
+- Compatibility layer for numbers and strings
 - Built-in microbenchmark helper
-- `--!native`
 - `--!optimize 2`
+- `--!native`
 
 ---
 
-## Requirements
+# Table of Contents
 
-Bnum v1.1.0 uses Roblox's `buffer` API and is intended for Luau in Roblox.
+1. [Installation](#installation)
+2. [Quick Start](#quick-start)
+3. [How Bnum Stores Numbers](#how-bnum-stores-numbers)
+4. [The v1.2 Buffer-Native Rule](#the-v12-buffer-native-rule)
+5. [Mutation Rules](#mutation-rules)
+6. [Creating Bnums](#creating-bnums)
+7. [Arithmetic](#arithmetic)
+8. [Fast Buffer API](#fast-buffer-api)
+9. [In-Place Math](#in-place-math)
+10. [Comparisons](#comparisons)
+11. [Roots, Powers, and Logs](#roots-powers-and-logs)
+12. [Formatting](#formatting)
+13. [`toSuffix()`](#tosuffix)
+14. [`toESuffix()`](#toesuffix)
+15. [`format()`](#format)
+16. [Serialization](#serialization)
+17. [Conversion and Inspection](#conversion-and-inspection)
+18. [Max Buy and Upgrade Systems](#max-buy-and-upgrade-systems)
+19. [Bulk Cost and Next Cost](#bulk-cost-and-next-cost)
+20. [Limited Buy Buttons](#limited-buy-buttons)
+21. [Economy Helpers](#economy-helpers)
+22. [Ordered Leaderboard Encoding](#ordered-leaderboard-encoding)
+23. [Compatibility API](#compatibility-api)
+24. [Simulator Example](#simulator-example)
+25. [Saving Player Data](#saving-player-data)
+26. [Performance Guidelines](#performance-guidelines)
+27. [Built-In Benchmark](#built-in-benchmark)
+28. [API Reference](#api-reference)
+29. [v1.2.0 Changes](#v126-changes)
+30. [Recommended Project Pattern](#recommended-project-pattern)
 
-```lua
---!optimize 2
---!native
-```
+---
 
-Recommended ModuleScript name:
+# Installation
+
+Create a ModuleScript named `Bnum` in `ReplicatedStorage`.
 
 ```text
 ReplicatedStorage
 └── Bnum
 ```
 
-Then require it with:
+Require it:
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Bnum = require(ReplicatedStorage:WaitForChild("Bnum"))
 ```
 
+Check the loaded version:
+
+```lua
+print(Bnum.VERSION)
+-- 1.2.0
+```
+
+Bnum itself uses:
+
+```lua
+--!optimize 2
+--!native
+```
+
 ---
 
-## Quick Start
+# Quick Start
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Bnum = require(ReplicatedStorage:WaitForChild("Bnum"))
 
-local coins = Bnum.fromNumber(1_000)
-local reward = Bnum.fromNumber(250)
+local Coins = Bnum.fromNumber(1_000)
+local Reward = Bnum.fromNumber(250)
 
-coins = Bnum.add(coins, reward)
+Bnum.addeq(Coins, Reward)
 
-print(Bnum.format(coins))
-print(Bnum.toSuffix(coins))
-print(Bnum.toStr(coins))
+print(Bnum.toSuffix(Coins))
+print(Bnum.toString(Coins))
 ```
 
 Example output:
 
 ```text
-1,250
-1250
+1.25k
 1.25e3
 ```
 
 ---
 
-# Important: Buffer-Native API
+# How Bnum Stores Numbers
 
-Bnum v1.2+ intentionally separates conversion from math.
+A Bnum is a 12-byte Roblox `buffer`.
 
-Core operations expect Bnum buffers:
+Conceptually:
 
-```lua
-local a = Bnum.fromNumber(100)
-local b = Bnum.fromNumber(25)
-
-local result = Bnum.add(a, b)
+```text
+value = sign × 10^logMagnitude
 ```
 
-Do not repeatedly pass normal numbers into hot-path math.
+The buffer stores:
 
-Instead of:
-
-```lua
--- Not the v1.2 hot-path style
-local result = Bnum.compat.add(100, 25)
+```text
+Offset 0: sign
+Offset 4: base-10 logarithmic magnitude
 ```
 
-prefer:
+The public size is:
 
 ```lua
-local a = Bnum.fromNumber(100)
-local b = Bnum.fromNumber(25)
-
-local result = Bnum.add(a, b)
+print(Bnum.SIZE)
+-- 12
 ```
 
-Use `ensure()`, `fromNumber()`, or `fromString()` at system boundaries, then keep values as Bnum buffers internally.
+Examples:
+
+```text
+1000
+sign = 1
+logMagnitude = 3
+
+-1000
+sign = -1
+logMagnitude = 3
+
+1e1000
+sign = 1
+logMagnitude = 1000
+```
+
+This is why multiplication and division can be extremely cheap:
+
+```text
+multiply -> add logarithms
+divide   -> subtract logarithms
+```
+
+Bnum also has dedicated representations for:
+
+```text
+Zero
+NaN
++Infinity
+-Infinity
+```
+
+---
+
+# The v1.2 Buffer-Native Rule
+
+The core v1.2 API expects **Bnum buffers**.
+
+Convert values at the edge of your system:
+
+```lua
+local Coins = Bnum.fromString("1e100")
+local Reward = Bnum.fromNumber(250)
+```
+
+Then keep using buffers:
+
+```lua
+Bnum.addeq(Coins, Reward)
+```
+
+Avoid repeatedly converting normal values inside hot loops.
+
+Less efficient:
+
+```lua
+for _ = 1, 100000 do
+	local Result = Bnum.compat.add("1e100", 250)
+end
+```
+
+Preferred:
+
+```lua
+local A = Bnum.fromString("1e100")
+local B = Bnum.fromNumber(250)
+
+for _ = 1, 100000 do
+	local Result = Bnum.add(A, B)
+end
+```
+
+The compatibility API is still available when convenience matters more than raw hot-path performance.
 
 ---
 
 # Mutation Rules
 
-Performance is a priority in v1.1.0, so some functions intentionally reuse the first input buffer.
+This is one of the most important parts of Bnum.
 
-This matters.
+Some APIs allocate a new result.
 
-## Allocating operation
+Other APIs intentionally mutate the first Bnum argument to reduce allocations.
 
-`add()` creates a new output buffer:
+## Allocating example
 
-```lua
-local a = Bnum.fromNumber(100)
-local b = Bnum.fromNumber(50)
-
-local result = Bnum.add(a, b)
-
-print(Bnum.format(a))      -- 100
-print(Bnum.format(result)) -- 150
-```
-
-## Mutating operations
-
-Several operations reuse and modify the first input buffer:
+`add()` returns a new buffer:
 
 ```lua
-local value = Bnum.fromNumber(100)
-local multiplier = Bnum.fromNumber(2)
+local A = Bnum.fromNumber(100)
+local B = Bnum.fromNumber(50)
 
-value = Bnum.mul(value, multiplier)
+local Result = Bnum.add(A, B)
 
-print(Bnum.format(value)) -- 200
+print(Bnum.toSuffix(A))
+-- 100
+
+print(Bnum.toSuffix(Result))
+-- 150
 ```
 
-If you need to preserve the original value, clone it first:
+## Mutating example
+
+`mul()` reuses the first buffer:
 
 ```lua
-local original = Bnum.fromNumber(100)
-local multiplier = Bnum.fromNumber(2)
+local Value = Bnum.fromNumber(100)
+local Multiplier = Bnum.fromNumber(2)
 
-local result = Bnum.mul(Bnum.clone(original), multiplier)
+Bnum.mul(Value, Multiplier)
 
-print(Bnum.format(original)) -- 100
-print(Bnum.format(result))   -- 200
+print(Bnum.toSuffix(Value))
+-- 200
 ```
 
-As a general rule, treat these as mutating their first Bnum argument:
+If you need to preserve the original:
+
+```lua
+local Original = Bnum.fromNumber(100)
+local Multiplier = Bnum.fromNumber(2)
+
+local Result = Bnum.mul(
+	Bnum.clone(Original),
+	Multiplier
+)
+
+print(Bnum.toSuffix(Original))
+-- 100
+
+print(Bnum.toSuffix(Result))
+-- 200
+```
+
+## Common mutating APIs
+
+Treat these as mutating their first Bnum argument:
 
 ```text
 sub
@@ -174,13 +297,20 @@ pow
 pow10
 sqrt
 log10
-log / ln
+log
+ln
 exp
-root
 floor
 ceil
 round
-mod / imod
+mod
+imod
+root
+neg
+recip
+cbrt
+powf
+log2
 intdiv
 scaleCurve
 progress
@@ -189,45 +319,71 @@ abs
 eta
 ```
 
-Use `clone()` whenever the original first argument must remain unchanged.
+The explicit `*eq` functions also mutate:
+
+```text
+addeq
+subeq
+muleq
+diveq
+```
+
+## APIs that may return an existing input
+
+These are not guaranteed to return a fresh clone:
+
+```text
+min
+max
+clamp
+softCap
+```
+
+If ownership matters, clone the result:
+
+```lua
+local SafeResult = Bnum.clone(
+	Bnum.max(A, B)
+)
+```
 
 ---
 
 # Creating Bnums
 
-## `fromNumber`
+## `fromNumber()`
 
 Convert a regular Luau number:
 
 ```lua
-local coins = Bnum.fromNumber(1_000_000)
-local negative = Bnum.fromNumber(-250)
-local zero = Bnum.fromNumber(0)
+local A = Bnum.fromNumber(1000)
+local B = Bnum.fromNumber(-250)
+local C = Bnum.fromNumber(0)
 ```
 
 ---
 
-## `fromString`
+## `fromString()`
 
-Useful for scientific notation and values that are easier to express as text:
+Use strings for scientific values:
 
 ```lua
-local value = Bnum.fromString("1e100")
-local another = Bnum.fromString("2.5e250")
-local negative = Bnum.fromString("-7.5e50")
+local A = Bnum.fromString("1e100")
+local B = Bnum.fromString("2.5e250")
+local C = Bnum.fromString("-7.5e500")
 ```
 
-Special strings are also supported:
+Special values:
 
 ```lua
-local nan = Bnum.fromString("NaN")
-local inf = Bnum.fromString("Inf")
-local negativeInf = Bnum.fromString("-Inf")
+local NaN = Bnum.fromString("NaN")
+local Inf = Bnum.fromString("Inf")
+local NegativeInf = Bnum.fromString("-Inf")
 ```
 
 ---
 
-## `new`
+## `new()`
 
 `new(mantissa, exponent)` represents:
 
@@ -238,68 +394,92 @@ mantissa × 10^exponent
 Example:
 
 ```lua
-local thousand = Bnum.new(1, 3)
-local millionAndQuarter = Bnum.new(1.25, 6)
+local Thousand = Bnum.new(1, 3)
+local Value = Bnum.new(1.25, 6)
 
-print(Bnum.format(thousand))          -- 1,000
-print(Bnum.toSuffix(millionAndQuarter)) -- 1.25m
+print(Bnum.toSuffix(Thousand))
+-- 1k
+
+print(Bnum.toSuffix(Value))
+-- 1.25m
 ```
+
+Important:
+
+```lua
+Bnum.new(1, 3)
+```
+
+means:
+
+```text
+1 × 10^3
+= 1000
+= 1k
+```
+
+It does **not** mean the number `3`.
 
 ---
 
-## `ensure`
+## `ensure()`
 
-`ensure()` accepts a Bnum buffer, number, or string.
+`ensure()` accepts:
 
-```lua
-local a = Bnum.ensure(1000)
-local b = Bnum.ensure("2.5e100")
-local c = Bnum.ensure(a)
+```text
+buffer
+number
+string
 ```
 
-For an existing Bnum buffer, it returns that same buffer.
-
-Use this mainly at API boundaries rather than inside tight loops.
-
-`coerce` is an alias:
+Example:
 
 ```lua
-local value = Bnum.coerce("1e500")
+local A = Bnum.ensure(1000)
+local B = Bnum.ensure("1e100")
+local C = Bnum.ensure(A)
 ```
+
+If the value is already a buffer, the same buffer is returned.
+
+Alias:
+
+```lua
+Bnum.coerce
+```
+
+Use `ensure()` at API boundaries, not repeatedly in hot math loops.
 
 ---
 
-## `clone`
+## `clone()`
 
-Create an independent 12-byte copy:
+Create an independent copy:
 
 ```lua
-local original = Bnum.fromNumber(500)
-local copy = Bnum.clone(original)
+local Original = Bnum.fromString("1e100")
+local Copy = Bnum.clone(Original)
 
-Bnum.muleq(copy, Bnum.fromNumber(2))
+Bnum.muleq(Copy, Bnum.fromNumber(2))
 
-print(Bnum.format(original)) -- 500
-print(Bnum.format(copy))     -- 1,000
+print(Bnum.toSuffix(Original))
+print(Bnum.toSuffix(Copy))
 ```
 
 ---
 
 # Arithmetic
 
-Create your inputs once:
-
-```lua
-local a = Bnum.fromNumber(100)
-local b = Bnum.fromNumber(25)
-```
-
 ## Addition
 
 ```lua
-local result = Bnum.add(a, b)
+local A = Bnum.fromNumber(100)
+local B = Bnum.fromNumber(25)
 
-print(Bnum.format(result)) -- 125
+local Result = Bnum.add(A, B)
+
+print(Bnum.toSuffix(Result))
+-- 125
 ```
 
 `add()` allocates a new result.
@@ -309,26 +489,31 @@ print(Bnum.format(result)) -- 125
 ## Subtraction
 
 ```lua
-local result = Bnum.sub(Bnum.clone(a), b)
+local A = Bnum.fromNumber(100)
+local B = Bnum.fromNumber(25)
 
-print(Bnum.format(result)) -- 75
+Bnum.sub(A, B)
+
+print(Bnum.toSuffix(A))
+-- 75
 ```
 
-`sub()` mutates its first argument.
+`sub()` mutates `A`.
 
 ---
 
 ## Zero-Clamped Subtraction
 
-`subz()` prevents the result from becoming negative.
+`subz()` prevents a negative result:
 
 ```lua
-local health = Bnum.fromNumber(50)
-local damage = Bnum.fromNumber(100)
+local Health = Bnum.fromNumber(50)
+local Damage = Bnum.fromNumber(100)
 
-health = Bnum.subz(health, damage)
+Bnum.subz(Health, Damage)
 
-print(Bnum.format(health)) -- 0
+print(Bnum.toSuffix(Health))
+-- 0
 ```
 
 ---
@@ -336,12 +521,13 @@ print(Bnum.format(health)) -- 0
 ## Multiplication
 
 ```lua
-local coins = Bnum.fromNumber(100)
-local multiplier = Bnum.fromNumber(3)
+local Value = Bnum.fromNumber(100)
+local Multiplier = Bnum.fromNumber(3)
 
-coins = Bnum.mul(coins, multiplier)
+Bnum.mul(Value, Multiplier)
 
-print(Bnum.format(coins)) -- 300
+print(Bnum.toSuffix(Value))
+-- 300
 ```
 
 ---
@@ -349,85 +535,13 @@ print(Bnum.format(coins)) -- 300
 ## Division
 
 ```lua
-local value = Bnum.fromNumber(100)
-local divisor = Bnum.fromNumber(4)
+local Value = Bnum.fromNumber(100)
+local Divisor = Bnum.fromNumber(4)
 
-value = Bnum.div(value, divisor)
+Bnum.div(Value, Divisor)
 
-print(Bnum.format(value)) -- 25
-```
-
----
-
-## Power
-
-Both arguments are Bnums:
-
-```lua
-local base = Bnum.fromNumber(10)
-local power = Bnum.fromNumber(6)
-
-local result = Bnum.pow(base, power)
-
-print(Bnum.toSuffix(result)) -- 1m
-```
-
-For negative bases, fractional powers that are not real produce NaN.
-
----
-
-## Power of Ten
-
-```lua
-local exponent = Bnum.fromNumber(100)
-
-local value = Bnum.pow10(exponent)
-
-print(Bnum.toStr(value))
-```
-
----
-
-## Square Root
-
-```lua
-local value = Bnum.fromNumber(144)
-
-value = Bnum.sqrt(value)
-
-print(Bnum.format(value)) -- 12
-```
-
----
-
-## Root
-
-```lua
-local value = Bnum.fromNumber(256)
-local degree = Bnum.fromNumber(4)
-
-value = Bnum.root(value, degree)
-
-print(Bnum.format(value)) -- 4
-```
-
----
-
-## Modulo
-
-```lua
-local value = Bnum.fromNumber(17)
-local divisor = Bnum.fromNumber(5)
-
-value = Bnum.mod(value, divisor)
-
-print(Bnum.format(value)) -- 2
-```
-
-Alias:
-
-```lua
-Bnum.imod(value, divisor)
+print(Bnum.toSuffix(Value))
+-- 25
 ```
 
 ---
@@ -435,32 +549,42 @@ Bnum.imod(value, divisor)
 ## Integer Division
 
 ```lua
-local value = Bnum.fromNumber(17)
-local divisor = Bnum.fromNumber(5)
+local Value = Bnum.fromNumber(17)
+local Divisor = Bnum.fromNumber(5)
 
-value = Bnum.intdiv(value, divisor)
+Bnum.intdiv(Value, Divisor)
 
-print(Bnum.format(value)) -- 3
+print(Bnum.toSuffix(Value))
+-- 3
+```
+
+---
+
+## Modulo
+
+```lua
+local Value = Bnum.fromNumber(17)
+local Divisor = Bnum.fromNumber(5)
+
+Bnum.mod(Value, Divisor)
+
+print(Bnum.toSuffix(Value))
+-- 2
+```
+
+Alias:
+
+```lua
+Bnum.imod(Value, Divisor)
 ```
 
 ---
 
 # Fast Buffer API
 
-For systems doing very large numbers of operations, Bnum exposes direct reusable-buffer functions.
+Bnum exposes lower-level reusable-buffer operations for allocation-sensitive code.
 
-```lua
-local a = Bnum.fromNumber(100)
-local b = Bnum.fromNumber(25)
-
-local out = buffer.create(Bnum.SIZE)
-
-Bnum.addBuffer(a, b, out)
-
-print(Bnum.format(out)) -- 125
-```
-
-Available functions:
+Available:
 
 ```text
 addBuffer
@@ -470,36 +594,46 @@ divBuffer
 cmpBuffer
 ```
 
-If `out` is omitted, the arithmetic buffer functions allocate one:
+## Allocate automatically
 
 ```lua
-local result = Bnum.mulBuffer(a, b)
+local A = Bnum.fromNumber(100)
+local B = Bnum.fromNumber(25)
+
+local Result = Bnum.addBuffer(A, B)
 ```
 
-For maximum control, reuse a scratch buffer:
+## Reuse an output buffer
 
 ```lua
-local scratch = buffer.create(Bnum.SIZE)
+local A = Bnum.fromNumber(100)
+local B = Bnum.fromNumber(25)
 
-for _ = 1, 1000 do
-	Bnum.mulBuffer(a, b, scratch)
+local Out = buffer.create(Bnum.SIZE)
+
+Bnum.addBuffer(A, B, Out)
+
+print(Bnum.toSuffix(Out))
+-- 125
+```
+
+Reuse it:
+
+```lua
+local Out = buffer.create(Bnum.SIZE)
+
+for _ = 1, 100000 do
+	Bnum.mulBuffer(A, B, Out)
 end
 ```
+
+This avoids creating a new output buffer for each operation.
 
 ---
 
 # In-Place Math
 
-The `*eq` functions write the result directly into the first buffer.
-
-```lua
-local coins = Bnum.fromNumber(100)
-local gain = Bnum.fromNumber(25)
-
-Bnum.addeq(coins, gain)
-
-print(Bnum.format(coins)) -- 125
-```
+The `*eq` APIs write directly into the first buffer.
 
 Available:
 
@@ -513,38 +647,62 @@ diveq
 Example:
 
 ```lua
-local damage = Bnum.fromNumber(100)
-local multiplier = Bnum.fromNumber(2)
+local Coins = Bnum.fromNumber(100)
+local Reward = Bnum.fromNumber(25)
 
-Bnum.muleq(damage, multiplier)
+Bnum.addeq(Coins, Reward)
 
-print(Bnum.format(damage)) -- 200
+print(Bnum.toSuffix(Coins))
+-- 125
 ```
 
-Use these in hot loops when mutation is expected.
+Multiplication:
+
+```lua
+local Damage = Bnum.fromNumber(100)
+local Multiplier = Bnum.fromNumber(2)
+
+Bnum.muleq(Damage, Multiplier)
+
+print(Bnum.toSuffix(Damage))
+-- 200
+```
+
+Use these when mutation is intentional.
 
 ---
 
 # Comparisons
 
 ```lua
-local a = Bnum.fromNumber(100)
-local b = Bnum.fromNumber(250)
+local A = Bnum.fromNumber(100)
+local B = Bnum.fromNumber(250)
 
-print(Bnum.cmp(a, b)) -- -1
-print(Bnum.eq(a, b))  -- false
-print(Bnum.lt(a, b))  -- true
-print(Bnum.gt(a, b))  -- false
-print(Bnum.lte(a, b)) -- true
-print(Bnum.gte(a, b)) -- false
+print(Bnum.cmp(A, B))
+-- -1
+
+print(Bnum.eq(A, B))
+-- false
+
+print(Bnum.lt(A, B))
+-- true
+
+print(Bnum.gt(A, B))
+-- false
+
+print(Bnum.lte(A, B))
+-- true
+
+print(Bnum.gte(A, B))
+-- false
 ```
 
 `cmp()` returns:
 
 ```text
--1  a < b
- 0  a == b
- 1  a > b
+-1 -> A < B
+ 0 -> A == B
+ 1 -> A > B
 ```
 
 Aliases:
@@ -557,54 +715,204 @@ leeq     lte
 meeq     gte
 ```
 
-For new code, the `lt`, `gt`, `lte`, and `gte` aliases are usually clearer.
+For new code, these names are easier to read:
 
----
-
-## Min / Max
-
-```lua
-local a = Bnum.fromNumber(10)
-local b = Bnum.fromNumber(500)
-local c = Bnum.fromNumber(25)
-
-local smallest = Bnum.min(a, b, c)
-local largest = Bnum.max(a, b, c)
-
-print(Bnum.format(smallest)) -- 10
-print(Bnum.format(largest))  -- 500
-```
-
-`min()` and `max()` return one of the existing input buffers rather than cloning it.
-
----
-
-# Rounding
-
-```lua
-local value = Bnum.fromNumber(12.75)
-
-local floored = Bnum.floor(Bnum.clone(value))
-local ceiled = Bnum.ceil(Bnum.clone(value))
-local rounded = Bnum.round(Bnum.clone(value))
-
-print(Bnum.format(floored)) -- 12
-print(Bnum.format(ceiled))  -- 13
-print(Bnum.format(rounded)) -- 13
+```text
+lt
+gt
+lte
+gte
 ```
 
 ---
 
-# Logarithms
-
-## Base 10
+## `min()` and `max()`
 
 ```lua
-local value = Bnum.fromNumber(1000)
+local A = Bnum.fromNumber(10)
+local B = Bnum.fromNumber(500)
+local C = Bnum.fromNumber(25)
 
-value = Bnum.log10(value)
+local Smallest = Bnum.min(A, B, C)
+local Largest = Bnum.max(A, B, C)
 
-print(Bnum.format(value)) -- 3
+print(Bnum.toSuffix(Smallest))
+-- 10
+
+print(Bnum.toSuffix(Largest))
+-- 500
+```
+
+`min()` and `max()` return one of the supplied buffers.
+
+---
+
+# Roots, Powers, and Logs
+
+## `pow()`
+
+Both arguments are Bnums:
+
+```lua
+local Base = Bnum.fromNumber(10)
+local Power = Bnum.fromNumber(6)
+
+Bnum.pow(Base, Power)
+
+print(Bnum.toSuffix(Base))
+-- 1m
+```
+
+The first buffer is mutated.
+
+Negative-base behavior is handled for integer exponents:
+
+```lua
+local A = Bnum.fromNumber(-1)
+
+Bnum.pow(A, Bnum.fromNumber(3))
+
+print(Bnum.toSuffix(A))
+-- -1
+```
+
+A non-real fractional power becomes NaN:
+
+```lua
+local A = Bnum.fromNumber(-1)
+
+Bnum.pow(A, Bnum.fromNumber(0.5))
+
+print(Bnum.isNaN(A))
+-- true
+```
+
+---
+
+## `powf()`
+
+Use a normal Luau number as the exponent:
+
+```lua
+local Value = Bnum.fromNumber(9)
+
+Bnum.powf(Value, 0.5)
+
+print(Bnum.toSuffix(Value))
+-- 3
+```
+
+This is useful when the exponent itself does not need to be a Bnum.
+
+---
+
+## `pow10()`
+
+```lua
+local Exponent = Bnum.fromNumber(100)
+
+Bnum.pow10(Exponent)
+
+print(Bnum.toString(Exponent))
+-- 1e100
+```
+
+---
+
+## `sqrt()`
+
+```lua
+local Value = Bnum.fromNumber(144)
+
+Bnum.sqrt(Value)
+
+print(Bnum.toSuffix(Value))
+-- 12
+```
+
+---
+
+## `cbrt()`
+
+Cube roots support negative values:
+
+```lua
+local Value = Bnum.fromNumber(-125)
+
+Bnum.cbrt(Value)
+
+print(Bnum.toSuffix(Value))
+-- -5
+```
+
+---
+
+## `root()`
+
+```lua
+local Value = Bnum.fromNumber(256)
+local Degree = Bnum.fromNumber(4)
+
+Bnum.root(Value, Degree)
+
+print(Bnum.toSuffix(Value))
+-- 4
+```
+
+---
+
+## `recip()`
+
+Reciprocal:
+
+```lua
+local Value = Bnum.fromNumber(8)
+
+Bnum.recip(Value)
+
+print(Bnum.format(Value, 4))
+-- 0.125
+```
+
+---
+
+## `neg()`
+
+Negate in place:
+
+```lua
+local Value = Bnum.fromNumber(500)
+
+Bnum.neg(Value)
+
+print(Bnum.toSuffix(Value))
+-- -500
+```
+
+---
+
+## `log10()`
+
+```lua
+local Value = Bnum.fromNumber(1000)
+
+Bnum.log10(Value)
+
+print(Bnum.toSuffix(Value))
+-- 3
+```
+
+---
+
+## `log2()`
+
+```lua
+local Value = Bnum.fromNumber(1024)
+
+Bnum.log2(Value)
+
+print(Bnum.toSuffix(Value))
+-- 10
 ```
 
 ---
@@ -612,242 +920,430 @@ print(Bnum.format(value)) -- 3
 ## Natural Log
 
 ```lua
-local value = Bnum.fromNumber(10)
+local Value = Bnum.fromNumber(10)
 
-value = Bnum.ln(value)
+Bnum.ln(Value)
 
-print(Bnum.format(value))
+print(Bnum.format(Value))
 ```
 
 `ln` is an alias of `log` when no base is supplied.
 
 ---
 
-## Custom Base
+## Custom Base Log
 
 ```lua
-local value = Bnum.fromNumber(1000)
-local base = Bnum.fromNumber(10)
+local Value = Bnum.fromNumber(1000)
+local Base = Bnum.fromNumber(10)
 
-value = Bnum.log(value, base)
+Bnum.log(Value, Base)
 
-print(Bnum.format(value)) -- 3
+print(Bnum.toSuffix(Value))
+-- 3
 ```
 
 ---
 
-## Exponential
+## `exp()`
 
 ```lua
-local value = Bnum.fromNumber(2)
+local Value = Bnum.fromNumber(2)
 
-value = Bnum.exp(value)
+Bnum.exp(Value)
 
-print(Bnum.format(value))
+print(Bnum.format(Value))
 ```
 
 ---
 
 # Formatting
 
-Bnum intentionally separates the dedicated fast suffix formatter from the more flexible generic formatter.
+Bnum v1.2.0 has three main display systems:
 
-## `toSuffix`
+| Function | Main purpose | Decimal behavior |
+|---|---|---|
+| `toSuffix()` | Fast compact values | Truncates to 2 decimals |
+| `toESuffix()` | Extreme exponent notation | Truncates to 2 decimals |
+| `format()` | General-purpose formatting | Rounds using requested precision |
 
-Use `toSuffix()` for hot UI paths:
+This distinction is intentional.
 
-```lua
-local coins = Bnum.fromNumber(1_250_000)
+---
 
-print(Bnum.toSuffix(coins))
-```
+# `toSuffix()`
 
-Example:
-
-```text
-1.25m
-```
-
-Large suffixes are generated from Bnum's extended suffix system.
-
-Very large values beyond the suffix range fall back to scientific notation.
-
-Tiny values can use reciprocal-style formatting.
-
-Example:
+`toSuffix()` is the main compact formatter for gameplay UI.
 
 ```lua
-local tiny = Bnum.fromString("1e-6")
+local Coins = Bnum.fromString("1.25e6")
 
-print(Bnum.toSuffix(tiny))
+print(Bnum.toSuffix(Coins))
+-- 1.25m
 ```
 
-Example output:
+## v1.2.0 truncation behavior
+
+`toSuffix()` does **not** round up to the next displayed hundredth.
+
+Examples:
 
 ```text
-1/1m
+1e3        -> 1k
+1.1e3      -> 1.1k
+1.10e3     -> 1.1k
+1.2e3      -> 1.2k
+1.20e3     -> 1.2k
+1.02e3     -> 1.02k
+1.09e3     -> 1.09k
+1.095e3    -> 1.09k
+1.099e3    -> 1.09k
+1.999e3    -> 1.99k
+999.995e3  -> 999.99k
+```
+
+That means:
+
+```lua
+print(Bnum.toSuffix(Bnum.fromString("1.095e3")))
+-- 1.09k
+```
+
+and only once the actual value reaches the next displayed step:
+
+```lua
+print(Bnum.toSuffix(Bnum.fromString("1.1e3")))
+-- 1.1k
+```
+
+Unnecessary zeroes are removed:
+
+```text
+1.10k -> 1.1k
+1.20k -> 1.2k
+```
+
+Meaningful zeroes are kept:
+
+```text
+1.02k -> 1.02k
 ```
 
 ---
 
-## `format`
+## Large suffixes
 
-`format()` is the general-purpose formatter.
+Bnum generates extended suffixes for logarithmic magnitudes below the normal suffix cutoff.
+
+Examples begin with:
+
+```text
+k
+m
+b
+...
+```
+
+At extremely large magnitudes beyond the standard suffix range, `toSuffix()` falls back to scientific-style output.
+
+If you want compressed exponent notation instead, use `toESuffix()`.
+
+---
+
+## Tiny values
+
+`toSuffix()` also handles tiny values.
+
+Examples may use reciprocal-style notation once values become sufficiently small:
 
 ```lua
-local value = Bnum.fromNumber(123456)
+local Tiny = Bnum.fromString("1e-6")
 
-print(Bnum.format(value))
+print(Bnum.toSuffix(Tiny))
+```
+
+---
+
+# `toESuffix()`
+
+`toESuffix()` is new in v1.2.0.
+
+It behaves like `toSuffix()` below a configurable decimal-exponent threshold.
+
+By default:
+
+```text
+switchAt = 1000
+```
+
+Once the value reaches that exponent, the exponent itself is compacted using suffix notation.
+
+## Basic examples
+
+```text
+1e1000      -> E1k
+1e1020      -> E1.02k
+1e1095      -> E1.09k
+1e1200      -> E1.2k
+1e1999      -> E1.99k
+1e1000000   -> E1m
+```
+
+Usage:
+
+```lua
+local Value = Bnum.fromString("1e1000")
+
+print(Bnum.toESuffix(Value))
+-- E1k
+```
+
+---
+
+## Mantissa + E suffix
+
+The mantissa is kept when needed:
+
+```text
+1.2e1000    -> 1.2E1k
+1.02e1000   -> 1.02E1k
+1.095e1000  -> 1.09E1k
 ```
 
 Example:
 
-```text
-123,456
+```lua
+local Value = Bnum.fromString("1.2e1000")
+
+print(Bnum.toESuffix(Value))
+-- 1.2E1k
 ```
 
-For large values:
+---
+
+## Before the switch point
+
+Values below the threshold use normal suffix formatting:
 
 ```lua
-local value = Bnum.fromString("1.2345e250")
+local Value = Bnum.fromString("1.2e6")
 
-print(Bnum.format(value))
+print(Bnum.toESuffix(Value))
+-- 1.2m
+```
+
+---
+
+## Custom switch point
+
+Signature:
+
+```lua
+Bnum.toESuffix(value, switchAt?)
 ```
 
 Example:
 
-```text
-123.45...
+```lua
+local Value = Bnum.fromString("1e100")
+
+print(Bnum.toESuffix(Value, 100))
+-- E100
 ```
 
-The exact suffix/body depends on the value and requested precision.
+---
 
-Specify decimal precision:
+## Aliases
 
 ```lua
-print(Bnum.format(value, 2))
-print(Bnum.format(value, 3))
-print(Bnum.format(value, 4))
+Bnum.toExponentSuffix
+Bnum.toExtendedSuffix
 ```
 
-Optional hyper/scientific cutoff:
+These point to `toESuffix()`.
+
+Recommended name for new code:
 
 ```lua
-print(Bnum.format(value, 2, 1e9))
+Bnum.toESuffix(Value)
+```
+
+---
+
+# `format()`
+
+`format()` is the flexible general formatter.
+
+```lua
+local Value = Bnum.fromNumber(123456)
+
+print(Bnum.format(Value))
+-- 123,456
+```
+
+Unlike `toSuffix()`, `format()` uses normal rounding behavior.
+
+Specify precision:
+
+```lua
+print(Bnum.format(Value, 0))
+print(Bnum.format(Value, 1))
+print(Bnum.format(Value, 2))
+print(Bnum.format(Value, 4))
+```
+
+Optional scientific/hyper cutoff:
+
+```lua
+print(
+	Bnum.format(
+		Bnum.fromString("1e1000"),
+		2,
+		100
+	)
+)
 ```
 
 Use:
 
 ```text
-toSuffix()  when display speed is the priority
-format()    when you need the full formatting behavior
+toSuffix   -> compact gameplay UI
+toESuffix  -> extreme-value compact UI
+format     -> configurable/general formatting
 ```
 
 ---
 
-# Storage Strings
+# Serialization
 
-Use `toStr()` / `toString()` when you want a scientific string representation.
+## `toStr()` / `toString()`
 
-```lua
-local value = Bnum.fromString("1.25e100")
-
-local encoded = Bnum.toStr(value)
-
-print(encoded)
-```
-
-`toString` is an alias:
+Convert a Bnum into scientific text:
 
 ```lua
-local encoded = Bnum.toString(value)
+local Value = Bnum.fromString("1.25e100")
+
+local Saved = Bnum.toString(Value)
+
+print(Saved)
+-- 1.25e100
 ```
 
-You can restore it with:
+`toString` is an alias of:
 
 ```lua
-local restored = Bnum.fromString(encoded)
+Bnum.toStr
 ```
 
-Example round trip:
+Round trip:
 
 ```lua
-local original = Bnum.fromString("7.5e250")
-local serialized = Bnum.toStr(original)
-local restored = Bnum.fromString(serialized)
+local Original = Bnum.fromString("7.5e250")
 
-print(Bnum.eq(original, restored))
+local Saved = Bnum.toString(Original)
+local Restored = Bnum.fromString(Saved)
+
+print(Bnum.eq(Original, Restored))
+-- true
 ```
 
----
-
-# OrderedDataStore Encoding
-
-Roblox OrderedDataStores require numeric sortable values.
-
-Bnum provides:
+Special output:
 
 ```text
-lbencode
-lbdecode
-```
-
-Example:
-
-```lua
-local coins = Bnum.fromString("1e500")
-
-local orderedValue = Bnum.lbencode(coins)
-
-print(orderedValue)
-```
-
-Restore it:
-
-```lua
-local restored = Bnum.lbdecode(orderedValue)
-
-print(Bnum.toSuffix(restored))
-```
-
-This encoding is intended for ranking/leaderboard use.
-
-For normal persistent player data, storing a Bnum string or your own serialized representation may be easier to inspect.
-
----
-
-## `encodeData`
-
-`encodeData(new, old?)` returns the encoded leaderboard value.
-
-If an `old` encoded number is supplied and it is greater than the new encoded value, the old value is preserved.
-
-```lua
-local coins = Bnum.fromString("1e100")
-
-local encoded = Bnum.encodeData(coins)
-```
-
-With an existing score:
-
-```lua
-local encoded = Bnum.encodeData(coins, previousEncodedScore)
+Zero      -> 0e0
+NaN       -> NaN
+Infinity  -> Inf
+-Infinity -> -Inf
 ```
 
 ---
 
-# Inspection
+# Conversion and Inspection
+
+## `toNumber()`
+
+Convert back to a normal Luau number:
 
 ```lua
-local value = Bnum.fromNumber(-500)
+local Value = Bnum.fromNumber(125)
 
-print(Bnum.sign(value))
-print(Bnum.exponent(value))
-print(Bnum.isNegative(value))
-print(Bnum.isPositive(value))
-print(Bnum.isZero(value))
-print(Bnum.isNaN(value))
-print(Bnum.isBnum(value))
+print(Bnum.toNumber(Value))
+-- 125
+```
+
+Normal floating-point range still applies.
+
+Very large values become infinity:
+
+```lua
+local HugeValue = Bnum.fromString("1e1000")
+
+print(Bnum.toNumber(HugeValue))
+-- inf
+```
+
+Extremely tiny values can underflow to zero.
+
+`isFloat()` tells you whether the Bnum is finite and does not exceed the normal-number overflow limit used by Bnum. Extremely tiny values can still underflow to zero when converted with `toNumber()`.
+
+---
+
+## `isFloat()`
+
+```lua
+local Value = Bnum.fromString("1e100")
+
+print(Bnum.isFloat(Value))
+-- true
+```
+
+A huge Bnum:
+
+```lua
+local Value = Bnum.fromString("1e1000")
+
+print(Bnum.isFloat(Value))
+-- false
+```
+
+---
+
+## `isFinite()`
+
+```lua
+print(
+	Bnum.isFinite(
+		Bnum.fromString("1e1000")
+	)
+)
+-- true
+```
+
+Infinity:
+
+```lua
+print(
+	Bnum.isFinite(
+		Bnum.fromString("Inf")
+	)
+)
+-- false
+```
+
+---
+
+## Inspection helpers
+
+```lua
+local Value = Bnum.fromNumber(-500)
+
+print(Bnum.sign(Value))
+print(Bnum.exponent(Value))
+print(Bnum.isNaN(Value))
+print(Bnum.isZero(Value))
+print(Bnum.isPositive(Value))
+print(Bnum.isNegative(Value))
+print(Bnum.isBnum(Value))
 ```
 
 Available:
@@ -859,109 +1355,580 @@ isNaN
 isZero
 isPositive
 isNegative
+isFinite
+isFloat
 isBnum
 ```
 
-`exponent()` returns the internal base-10 logarithmic magnitude, not a normal scientific-notation exponent field.
+`exponent()` returns Bnum's internal base-10 logarithmic magnitude.
 
 ---
 
-# Absolute Value
+# Max Buy and Upgrade Systems
 
-`abs()` mutates the supplied buffer.
+Bnum v1.2.0 includes a geometric Max Buy system.
 
-```lua
-local value = Bnum.fromNumber(-500)
+It is designed for costs following:
 
-Bnum.abs(value)
-
-print(Bnum.format(value)) -- 500
+```text
+currentCost
+currentCost × multiplier
+currentCost × multiplier²
+currentCost × multiplier³
+...
 ```
 
-Preserve the original with:
+Example:
 
-```lua
-local positive = Bnum.abs(Bnum.clone(value))
-```
+```text
+Current Cost = 100
+Multiplier   = 10
 
----
-
-# Clamp
-
-```lua
-local value = Bnum.fromNumber(150)
-local minimum = Bnum.fromNumber(0)
-local maximum = Bnum.fromNumber(100)
-
-local clamped = Bnum.clamp(value, minimum, maximum)
-
-print(Bnum.format(clamped)) -- 100
-```
-
-`clamp()` may return one of the existing input buffers.
-
----
-
-# Split Integer / Fraction
-
-```lua
-local value = Bnum.fromNumber(12.75)
-
-local integer, fraction = Bnum.modf(value)
-
-print(Bnum.format(integer))  -- 12
-print(Bnum.format(fraction)) -- 0.75
+100
+1,000
+10,000
+100,000
+...
 ```
 
 ---
 
-# Random Bnums
+## `maxBuy()`
 
-No arguments:
-
-```lua
-local value = Bnum.random()
-```
-
-For positive ranges:
+Signature:
 
 ```lua
-local minimum = Bnum.fromNumber(1)
-local maximum = Bnum.fromString("1e100")
-
-local value = Bnum.random(minimum, maximum)
-```
-
-Bnum interpolates positive ranged random values in logarithmic space, making it useful when the range spans many orders of magnitude.
-
----
-
-# Game Economy Helpers
-
-Bnum includes helpers aimed at simulator, incremental, and economy systems.
-
----
-
-## Max Buy
-
-Calculate how many geometric-price purchases can be afforded.
-
-```lua
-local funds = Bnum.fromString("1e12")
-local baseCost = Bnum.fromNumber(100)
-local multiplier = Bnum.fromNumber(1.15)
-
-local amount, totalCost = Bnum.maxBuy(
-	Bnum.clone(funds),
-	baseCost,
+Bnum.maxBuy(
+	funds,
+	currentCost,
 	multiplier
 )
-
-print("Can buy:", amount)
-print("Total cost:", Bnum.toSuffix(totalCost))
 ```
 
-Using a clone for `funds` is recommended if the original value must always be preserved.
+Returns:
+
+```text
+amount: number
+totalCost: Bnum
+```
+
+Example:
+
+```lua
+local Money = Bnum.fromString("1e20")
+
+local CurrentCost = Bnum.fromString("1e12")
+local CostIncrease = Bnum.fromNumber(10)
+
+local Amount, TotalCost = Bnum.maxBuy(
+	Money,
+	CurrentCost,
+	CostIncrease
+)
+
+print("Can Buy:", Amount)
+print("Total Cost:", Bnum.toSuffix(TotalCost))
+```
+
+`maxBuy()` does not subtract money automatically.
+
+It calculates how many consecutive geometric upgrades can be afforded.
+
+---
+
+## Current owned count
+
+Suppose:
+
+```text
+Base Cost      = 100
+Cost Increase  = x10
+Owned Upgrades = 10
+```
+
+Get the price of the next upgrade:
+
+```lua
+local BaseCost = Bnum.new(1, 2)
+local CostIncrease = Bnum.fromNumber(10)
+local UpgradeCount = 10
+
+local CurrentCost = Bnum.nextCostNumber(
+	BaseCost,
+	CostIncrease,
+	UpgradeCount
+)
+
+print(Bnum.toString(CurrentCost))
+-- 1e12
+```
+
+The next prices are:
+
+```text
+Owned 10 -> next cost 1e12
+Owned 11 -> next cost 1e13
+Owned 12 -> next cost 1e14
+```
+
+Then:
+
+```lua
+local Amount, TotalCost = Bnum.maxBuy(
+	Money,
+	CurrentCost,
+	CostIncrease
+)
+```
+
+`Amount` is the number of **additional upgrades** that can be purchased.
+
+If:
+
+```text
+Current owned = 10
+Amount        = 2
+```
+
+then:
+
+```lua
+UpgradeCount += Amount
+```
+
+becomes:
+
+```text
+10 + 2 = 12 owned upgrades
+```
+
+---
+
+## Max Buy assumption
+
+`maxBuy()` assumes a pure geometric progression.
+
+This works:
+
+```text
+cost(x) = baseCost × multiplier^x
+```
+
+If your cost function includes additional jumps such as:
+
+```lua
+100 * (1.6 ^ x) * (2 ^ math.floor(x / 10))
+```
+
+then the multiplier changes at milestone boundaries.
+
+A single geometric `maxBuy()` call cannot model those extra jumps across the entire range.
+
+For those systems, calculate in milestone-safe batches or build a custom purchase loop.
+
+---
+
+# Bulk Cost and Next Cost
+
+## `nextCost()`
+
+Bnum owned count:
+
+```lua
+local BaseCost = Bnum.fromNumber(100)
+local Multiplier = Bnum.fromNumber(10)
+local Owned = Bnum.fromNumber(10)
+
+local Cost = Bnum.nextCost(
+	BaseCost,
+	Multiplier,
+	Owned
+)
+
+print(Bnum.toSuffix(Cost))
+```
+
+---
+
+## `nextCostNumber()`
+
+Normal number owned count:
+
+```lua
+local Cost = Bnum.nextCostNumber(
+	BaseCost,
+	Multiplier,
+	10
+)
+```
+
+This is usually convenient when upgrade counts are ordinary integers.
+
+Formula:
+
+```text
+nextCost = baseCost × multiplier^owned
+```
+
+Alias:
+
+```lua
+Bnum.costAt
+```
+
+---
+
+## `bulkCost()`
+
+Calculate the total cost of several geometric purchases:
+
+```lua
+local CurrentCost = Bnum.fromNumber(100)
+local Multiplier = Bnum.fromNumber(2)
+local Amount = Bnum.fromNumber(3)
+
+local Total = Bnum.bulkCost(
+	CurrentCost,
+	Multiplier,
+	Amount
+)
+
+print(Bnum.toSuffix(Total))
+```
+
+For:
+
+```text
+100
+200
+400
+```
+
+the result is:
+
+```text
+700
+```
+
+Alias:
+
+```lua
+Bnum.totalCost
+```
+
+---
+
+## `bulkCostNumber()`
+
+Use a normal number for the amount:
+
+```lua
+local Total = Bnum.bulkCostNumber(
+	CurrentCost,
+	Multiplier,
+	3
+)
+```
+
+v1.2.0 treats purchase counts as whole upgrades.
+
+For example:
+
+```lua
+Bnum.bulkCostNumber(
+	CurrentCost,
+	Multiplier,
+	2.9
+)
+```
+
+is treated as:
+
+```text
+2 purchases
+```
+
+---
+
+## `canAfford()`
+
+```lua
+if Bnum.canAfford(Money, CurrentCost) then
+	print("Can buy")
+end
+```
+
+---
+
+# Limited Buy Buttons
+
+Bnum v1.2.5 introduced limited Max Buy support and v1.2.0 keeps it intact.
+
+This is useful for:
+
+```text
+Buy 1
+Buy 2
+Buy 10
+Buy 25
+Buy Max
+```
+
+---
+
+## `maxBuyLimited()`
+
+```lua
+local Amount, TotalCost = Bnum.maxBuyLimited(
+	Money,
+	CurrentCost,
+	CostIncrease,
+	2
+)
+```
+
+Even if the player can afford 8 upgrades:
+
+```text
+Affordable = 8
+Limit      = 2
+Result     = 2
+```
+
+The returned `TotalCost` is recalculated for exactly those 2 upgrades.
+
+Alias:
+
+```lua
+Bnum.maxBuyCapped
+```
+
+---
+
+## `buyMax()`
+
+Returns:
+
+```text
+amount
+totalCost
+remainingMoney
+```
+
+Example:
+
+```lua
+local Amount, TotalCost, Remaining = Bnum.buyMax(
+	Money,
+	CurrentCost,
+	CostIncrease
+)
+
+if Amount > 0 then
+	Money = Remaining
+	UpgradeCount += Amount
+end
+```
+
+The original money buffer is not directly spent by the function.
+
+A remaining-money buffer is returned.
+
+---
+
+## `buyMaxLimited()`
+
+This is the cleanest API for a capped purchase button:
+
+```lua
+local Amount, TotalCost, Remaining = Bnum.buyMaxLimited(
+	Money,
+	CurrentCost,
+	CostIncrease,
+	2
+)
+
+if Amount > 0 then
+	UpgradeCount += Amount
+	Money = Remaining
+end
+```
+
+Complete example:
+
+```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Bnum = require(ReplicatedStorage.Bnum)
+
+local Money = Bnum.fromString("1e20")
+
+local UpgradeCount = 10
+local MaxPurchase = 2
+
+local BaseCost = Bnum.new(1, 2)
+local CostIncrease = Bnum.fromNumber(10)
+
+local CurrentCost = Bnum.nextCostNumber(
+	BaseCost,
+	CostIncrease,
+	UpgradeCount
+)
+
+local Amount, TotalCost, Remaining = Bnum.buyMaxLimited(
+	Money,
+	CurrentCost,
+	CostIncrease,
+	MaxPurchase
+)
+
+if Amount > 0 then
+	UpgradeCount += Amount
+	Money = Remaining
+end
+
+print("Bought:", Amount)
+print("Upgrade Count:", UpgradeCount)
+print("Spent:", Bnum.toSuffix(TotalCost))
+print("Money:", Bnum.toSuffix(Money))
+```
+
+If Max Buy says the player can afford 8 but the button limit is 2:
+
+```text
+Actually Bought: 2
+Upgrade Count:   12
+```
+
+Alias:
+
+```lua
+Bnum.buyMaxCapped
+```
+
+---
+
+## `maxBuyBnum()`
+
+Normal `maxBuy()` returns the purchase count as a Luau number.
+
+For extreme purchase counts, use:
+
+```lua
+local Amount, TotalCost = Bnum.maxBuyBnum(
+	Money,
+	CurrentCost,
+	CostIncrease
+)
+```
+
+Here `Amount` is itself a Bnum.
+
+Alias:
+
+```lua
+Bnum.maxBuyBig
+```
+
+---
+
+# Economy Helpers
+
+## Linear scaling
+
+Bnum count version:
+
+```lua
+local Base = Bnum.fromNumber(100)
+local Increment = Bnum.fromNumber(25)
+local Level = Bnum.fromNumber(10)
+
+local Result = Bnum.linear(
+	Base,
+	Increment,
+	Level
+)
+
+print(Bnum.toSuffix(Result))
+-- 350
+```
+
+Normal-number level:
+
+```lua
+local Result = Bnum.linearNumber(
+	Base,
+	Increment,
+	10
+)
+```
+
+Formula:
+
+```text
+base + increment × level
+```
+
+---
+
+## Soft Cap
+
+```lua
+local Value = Bnum.fromString("1e8")
+local Cap = Bnum.fromString("1e6")
+local Power = Bnum.fromNumber(0.5)
+
+local Result = Bnum.softCap(
+	Value,
+	Cap,
+	Power
+)
+
+print(Bnum.toSuffix(Result))
+```
+
+Values at or below the cap are returned unchanged.
+
+Values above the cap are compressed using the supplied power.
+
+---
+
+## Milestones
+
+Count reached milestones:
+
+```lua
+local Value = Bnum.fromNumber(275)
+local Step = Bnum.fromNumber(100)
+
+local Count = Bnum.milestoneCount(
+	Value,
+	Step
+)
+
+print(Bnum.toSuffix(Count))
+-- 2
+```
+
+Calculate a milestone bonus multiplier:
+
+```lua
+local Bonus = Bnum.fromNumber(0.25)
+
+local Multiplier = Bnum.milestone(
+	Value,
+	Step,
+	Bonus
+)
+
+print(Bnum.format(Multiplier))
+-- 1.5
+```
+
+Formula:
+
+```text
+1 + milestoneCount × bonus
+```
 
 ---
 
@@ -978,27 +1945,29 @@ hybrid
 Example:
 
 ```lua
-local baseCost = Bnum.fromNumber(100)
-local owned = Bnum.fromNumber(25)
-local scale = Bnum.fromNumber(1.15)
+local BaseCost = Bnum.fromNumber(100)
+local Owned = Bnum.fromNumber(25)
+local Scale = Bnum.fromNumber(1.15)
 
-local nextCost = Bnum.dynamicCost(
-	Bnum.clone(baseCost),
-	owned,
-	scale,
+local Cost = Bnum.dynamicCost(
+	Bnum.clone(BaseCost),
+	Owned,
+	Scale,
 	"exp"
 )
 
-print(Bnum.toSuffix(nextCost))
+print(Bnum.toSuffix(Cost))
 ```
 
-Because `dynamicCost()` reuses its first argument, clone the base cost when it must remain unchanged.
+`dynamicCost()` mutates its first argument.
+
+Clone the base cost if you need to keep it.
 
 ---
 
 ## Scale Curve
 
-Modes:
+Supported modes:
 
 ```text
 linear
@@ -1009,18 +1978,18 @@ sigmoid
 Example:
 
 ```lua
-local value = Bnum.fromNumber(1000)
-local base = Bnum.fromNumber(100)
-local exponent = Bnum.fromNumber(2)
+local Value = Bnum.fromNumber(1000)
+local Base = Bnum.fromNumber(100)
+local Exponent = Bnum.fromNumber(2)
 
-local scaled = Bnum.scaleCurve(
-	Bnum.clone(value),
-	base,
-	exponent,
+local Result = Bnum.scaleCurve(
+	Bnum.clone(Value),
+	Base,
+	Exponent,
 	"exp"
 )
 
-print(Bnum.format(scaled))
+print(Bnum.format(Result))
 ```
 
 ---
@@ -1028,19 +1997,19 @@ print(Bnum.format(scaled))
 ## Progress
 
 ```lua
-local current = Bnum.fromNumber(750)
-local goal = Bnum.fromNumber(1000)
+local Current = Bnum.fromNumber(750)
+local Goal = Bnum.fromNumber(1000)
 
-local progress = Bnum.progress(
-	Bnum.clone(current),
-	goal,
+local Progress = Bnum.progress(
+	Bnum.clone(Current),
+	Goal,
 	"linear"
 )
 
-print(Bnum.percent(progress, Bnum.fromNumber(1)))
+print(Bnum.toNumber(Progress))
 ```
 
-Available modes:
+Modes:
 
 ```text
 linear
@@ -1052,58 +2021,193 @@ sigmoid
 
 ## Percent
 
-`percent()` returns a string including `%`.
-
 ```lua
-local current = Bnum.fromNumber(25)
-local maximum = Bnum.fromNumber(100)
+local Current = Bnum.fromNumber(25)
+local Maximum = Bnum.fromNumber(100)
 
-print(Bnum.percent(current, maximum))
+print(Bnum.percent(Current, Maximum))
+-- 25%
 ```
 
-Example:
-
-```text
-25%
-```
+The result is a string.
 
 ---
 
 ## ETA
 
-Estimate remaining time-like units from a current value, goal, and rate.
-
 ```lua
-local current = Bnum.fromNumber(250)
-local goal = Bnum.fromNumber(1000)
-local rate = Bnum.fromNumber(50)
+local Current = Bnum.fromNumber(250)
+local Goal = Bnum.fromNumber(1000)
+local Rate = Bnum.fromNumber(50)
 
-local eta = Bnum.eta(
-	Bnum.clone(current),
-	goal,
-	rate
+local ETA = Bnum.eta(
+	Bnum.clone(Current),
+	Goal,
+	Rate
 )
 
-print(Bnum.format(eta))
+print(Bnum.toSuffix(ETA))
 ```
 
-`eta()` reuses the first input buffer.
+`eta()` mutates the first argument supplied to it.
+
+If the rate is not positive, the result becomes infinity.
+
+---
+
+# Rounding
+
+```lua
+local Value = Bnum.fromNumber(12.75)
+
+local Floored = Bnum.floor(Bnum.clone(Value))
+local Ceiled = Bnum.ceil(Bnum.clone(Value))
+local Rounded = Bnum.round(Bnum.clone(Value))
+
+print(Bnum.toSuffix(Floored))
+-- 12
+
+print(Bnum.toSuffix(Ceiled))
+-- 13
+
+print(Bnum.toSuffix(Rounded))
+-- 13
+```
+
+---
+
+# `modf()`
+
+Split integer and fractional portions:
+
+```lua
+local Value = Bnum.fromNumber(12.75)
+
+local Integer, Fraction = Bnum.modf(Value)
+
+print(Bnum.toSuffix(Integer))
+-- 12
+
+print(Bnum.format(Fraction, 4))
+-- 0.75
+```
+
+---
+
+# `clamp()`
+
+```lua
+local Value = Bnum.fromNumber(150)
+local Minimum = Bnum.fromNumber(0)
+local Maximum = Bnum.fromNumber(100)
+
+local Result = Bnum.clamp(
+	Value,
+	Minimum,
+	Maximum
+)
+
+print(Bnum.toSuffix(Result))
+-- 100
+```
+
+`clamp()` can return one of the supplied buffers.
+
+---
+
+# Random Bnums
+
+No arguments:
+
+```lua
+local Value = Bnum.random()
+```
+
+Positive range:
+
+```lua
+local Minimum = Bnum.fromNumber(1)
+local Maximum = Bnum.fromString("1e100")
+
+local Value = Bnum.random(
+	Minimum,
+	Maximum
+)
+```
+
+Bnum interpolates positive ranged values in logarithmic space.
+
+---
+
+# Ordered Leaderboard Encoding
+
+Bnum includes numeric leaderboard encoding helpers:
+
+```text
+lbencode
+lbdecode
+encodeData
+```
+
+## Encode
+
+```lua
+local Coins = Bnum.fromString("1e500")
+
+local Encoded = Bnum.lbencode(Coins)
+
+print(Encoded)
+```
+
+## Decode
+
+```lua
+local Restored = Bnum.lbdecode(Encoded)
+
+print(Bnum.toSuffix(Restored))
+```
+
+---
+
+## `encodeData()`
+
+```lua
+local Coins = Bnum.fromString("1e100")
+
+local Encoded = Bnum.encodeData(Coins)
+```
+
+With an old encoded score:
+
+```lua
+local Encoded = Bnum.encodeData(
+	Coins,
+	PreviousEncodedScore
+)
+```
+
+If the old encoded score is greater, `encodeData()` keeps the old value.
+
+This can be useful for highest-score style leaderboards.
 
 ---
 
 # Compatibility API
 
-v1.1.0 keeps flexible number/string conversion out of the normal hot path.
+The compatibility namespace accepts normal numbers and strings and converts them with `ensure()`.
 
-If convenience matters more than raw performance:
+Example:
 
 ```lua
-local result = Bnum.compat.add(100, "2.5e3")
+local Result = Bnum.compat.add(
+	100,
+	"2.5e3"
+)
 
-print(Bnum.format(result))
+print(Bnum.toSuffix(Result))
 ```
 
-Available compatibility helpers:
+Available:
 
 ```text
 compat.add
@@ -1114,19 +2218,36 @@ compat.pow
 compat.cmp
 compat.eq
 compat.format
+
+compat.toESuffix
+
+compat.maxBuy
+compat.maxBuyBnum
+compat.maxBuyLimited
+compat.buyMaxLimited
+
+compat.bulkCost
+compat.nextCost
+
+compat.linear
+compat.softCap
+compat.milestone
 ```
 
 Example:
 
 ```lua
-local result = Bnum.compat.mul("1e100", 2)
+local Amount, Total = Bnum.compat.maxBuy(
+	"1e20",
+	"1e12",
+	10
+)
 
-print(Bnum.toStr(result))
+print(Amount)
+print(Bnum.toSuffix(Total))
 ```
 
-The compatibility layer internally calls `ensure()`.
-
-For performance-sensitive code, convert values once and use the buffer-native API.
+For performance-sensitive code, convert once and use the direct buffer-native API instead.
 
 ---
 
@@ -1136,153 +2257,180 @@ For performance-sensitive code, convert values once and use the buffer-native AP
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Bnum = require(ReplicatedStorage:WaitForChild("Bnum"))
 
-local coins = Bnum.fromNumber(0)
-local clickPower = Bnum.fromNumber(1)
-local multiplier = Bnum.fromNumber(2)
+local Coins = Bnum.fromNumber(0)
+local ClickPower = Bnum.fromNumber(1)
+local Multiplier = Bnum.fromNumber(2)
 
-local function click()
-	Bnum.addeq(coins, clickPower)
-	print("Coins:", Bnum.toSuffix(coins))
+local function Click()
+	Bnum.addeq(Coins, ClickPower)
+
+	print(
+		"Coins:",
+		Bnum.toSuffix(Coins)
+	)
 end
 
-local function buyMultiplier()
-	Bnum.muleq(clickPower, multiplier)
-	print("Click Power:", Bnum.toSuffix(clickPower))
+local function UpgradeClickPower()
+	Bnum.muleq(
+		ClickPower,
+		Multiplier
+	)
+
+	print(
+		"Click Power:",
+		Bnum.toSuffix(ClickPower)
+	)
 end
 
 for _ = 1, 10 do
-	click()
+	Click()
 end
 
-buyMultiplier()
-click()
+UpgradeClickPower()
+Click()
 ```
+
+---
+
+# Extreme Simulator Display Example
+
+Use `toSuffix()` for normal gameplay values:
+
+```lua
+local Coins = Bnum.fromString("1.095e3")
+
+print(Bnum.toSuffix(Coins))
+-- 1.09k
+```
+
+Use `toESuffix()` once values become extreme:
+
+```lua
+Coins = Bnum.fromString("1.2e1000")
+
+print(Bnum.toESuffix(Coins))
+-- 1.2E1k
+```
+
+A UI helper:
+
+```lua
+local function DisplayNumber(Value: buffer): string
+	return Bnum.toESuffix(Value)
+end
+```
+
+Because `toESuffix()` already falls back to `toSuffix()` before exponent 1000, one formatter can handle both normal and extreme progression.
 
 ---
 
 # Leaderstats Example
 
-Roblox `NumberValue` cannot represent the full practical range of Bnum values.
-
-For display-only leaderstats, use a `StringValue`:
+For a display-only value, keep the actual Bnum in your server-side data and expose formatted text separately.
 
 ```lua
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Bnum = require(ReplicatedStorage:WaitForChild("Bnum"))
+local Bnum = require(
+	ReplicatedStorage:WaitForChild("Bnum")
+)
 
-Players.PlayerAdded:Connect(function(player)
-	local leaderstats = Instance.new("Folder")
-	leaderstats.Name = "leaderstats"
-	leaderstats.Parent = player
+Players.PlayerAdded:Connect(function(Player)
+	local Leaderstats = Instance.new("Folder")
+	Leaderstats.Name = "leaderstats"
+	Leaderstats.Parent = Player
 
-	local coinsLabel = Instance.new("StringValue")
-	coinsLabel.Name = "Coins"
-	coinsLabel.Parent = leaderstats
+	local CoinsDisplay = Instance.new("StringValue")
+	CoinsDisplay.Name = "Coins"
+	CoinsDisplay.Parent = Leaderstats
 
-	local coins = Bnum.fromString("1e250")
+	local Coins = Bnum.fromString("1e250")
 
-	coinsLabel.Value = Bnum.toSuffix(coins)
+	CoinsDisplay.Value = Bnum.toSuffix(Coins)
 end)
 ```
 
-Keep the actual Bnum in your server-side data model and use the StringValue only as the displayed representation.
+For extreme-value games:
+
+```lua
+CoinsDisplay.Value = Bnum.toESuffix(Coins)
+```
 
 ---
 
-# Saving Example
+# Saving Player Data
 
-A simple readable save format:
-
-```lua
-local value = Bnum.fromString("4.25e300")
-
-local saved = Bnum.toStr(value)
-```
-
-Load it again:
+A readable serialization pattern:
 
 ```lua
-local restored = Bnum.fromString(saved)
-```
+local Coins = Bnum.fromString("4.25e300")
 
-For a player-data table:
-
-```lua
-local data = {
-	Coins = Bnum.toStr(coins),
-	Power = Bnum.toStr(clickPower),
-}
+local SavedCoins = Bnum.toString(Coins)
 ```
 
 Restore:
 
 ```lua
-local coins = Bnum.fromString(data.Coins)
-local clickPower = Bnum.fromString(data.Power)
+local Coins = Bnum.fromString(SavedCoins)
 ```
+
+Player-data example:
+
+```lua
+local Data = {
+	Coins = Bnum.toString(Coins),
+	Power = Bnum.toString(Power),
+}
+```
+
+Loading:
+
+```lua
+local Coins = Bnum.fromString(Data.Coins)
+local Power = Bnum.fromString(Data.Power)
+```
+
+Keeping serialization at the data boundary means gameplay math remains buffer-native.
 
 ---
 
 # Performance Guidelines
 
-For the best performance:
+For the best Bnum performance:
 
-1. Convert numbers and strings once.
-2. Keep Bnum values as buffers internally.
+1. Convert normal values once.
+2. Keep Bnum values as buffers during gameplay.
 3. Avoid `ensure()` in tight loops.
-4. Use `toSuffix()` for frequently refreshed UI.
-5. Use `format()` when you need its general formatting behavior.
-6. Use `addeq`, `subeq`, `muleq`, and `diveq` when mutation is safe.
-7. Reuse output buffers with `addBuffer`, `subBuffer`, `mulBuffer`, and `divBuffer` when appropriate.
-8. Use `clone()` before mutating a value that must be preserved.
-9. Prefer direct comparisons such as `eq`, `lt`, `gt`, `lte`, and `gte`.
-
----
-
-# v1.1.0 Benchmark Snapshot
-
-Example results from a Roblox Studio FULL benchmark run:
-
-```text
-Scored common comparisons: 31
-Bnum v1.1.0 wins:          31
-FoundForces wins:           0
-Geometric mean:             Bnum v1.1.0 ~1.817x faster
-```
-
-Selected results:
-
-| Operation | Bnum v1.1.0 | FoundForces | Relative result |
-|---|---:|---:|---:|
-| `cmp` | 36.160 ns | 41.629 ns | Bnum 1.151x |
-| `eq` | 30.238 ns | 59.030 ns | Bnum 1.952x |
-| `mul` | 43.855 ns | 71.622 ns | Bnum 1.633x |
-| `div` | 44.580 ns | 72.704 ns | Bnum 1.631x |
-| `sqrt` | 31.654 ns | 65.135 ns | Bnum 2.058x |
-| `root` | 54.749 ns | 137.026 ns | Bnum 2.503x |
-| `lbencode` | 71.703 ns | 213.011 ns | Bnum 2.971x |
-| `toSuffix ~1e250` | 140.136 ns | 150.069 ns | Bnum 1.071x |
-| `toSuffix ~1e2500` | 140.766 ns | 154.173 ns | Bnum 1.095x |
-
-Benchmark results depend on hardware, Roblox Studio/runtime state, native compilation, and workload. Use the included benchmark tools to measure performance in your own project.
+4. Avoid the compatibility layer in hot loops.
+5. Use `addeq`, `subeq`, `muleq`, and `diveq` when mutation is intended.
+6. Reuse `addBuffer`, `subBuffer`, `mulBuffer`, and `divBuffer` output buffers when useful.
+7. Use `clone()` only when you actually need an independent value.
+8. Use direct comparisons such as `eq`, `lt`, `gt`, `lte`, and `gte`.
+9. Use `toSuffix()` for compact UI.
+10. Use `toESuffix()` when one formatter needs to cover normal and extreme values.
+11. Avoid formatting every frame unless the displayed value actually changed.
+12. Keep save/load conversion outside gameplay math loops.
 
 ---
 
 # Built-In Benchmark
 
-Bnum includes a small benchmark helper:
+Bnum includes a small microbenchmark helper.
 
 ```lua
-local results = Bnum.benchmark(100_000)
+local Results = Bnum.benchmark(100_000)
 
-for name, ns in results do
-	print(name, ns, "ns/op")
+for Name, NsPerOperation in Results do
+	print(
+		Name,
+		NsPerOperation,
+		"ns/op"
+	)
 end
 ```
 
-It currently measures core operations such as:
+Current built-in measurements include:
 
 ```text
 fromNumber
@@ -1291,70 +2439,133 @@ mulReuse
 cmp
 ```
 
-Use the full comparison benchmark for more detailed profiling.
+The built-in benchmark is a microbenchmark, not a complete game-performance test.
+
+Benchmark in the same Roblox environment and workload you care about before drawing conclusions from small timing differences.
 
 ---
 
 # API Reference
+
+## Metadata
+
+```lua
+Bnum.VERSION
+Bnum.STORAGE_VERSION
+Bnum.SIZE
+```
+
+Current values:
+
+```text
+VERSION         = "1.2.0"
+STORAGE_VERSION = 1
+SIZE            = 12
+```
+
+---
 
 ## Construction
 
 ```text
 ensure(value)
 coerce(value)
+
 clone(value)
+
 new(mantissa, exponent)
+
 fromNumber(number)
 fromString(string)
 ```
+
+---
+
+## Conversion
+
+```text
+toNumber(value)
+
+toStr(value)
+toString(value)
+```
+
+---
 
 ## Arithmetic
 
 ```text
 add(a, b)
+
 sub(a, b)
 subz(a, b)
+
 mul(a, b)
 div(a, b)
+
 pow(a, b)
+powf(value, numberPower)
 pow10(value)
+
 sqrt(value)
+cbrt(value)
 root(value, degree)
+
+recip(value)
+neg(value)
+abs(value)
+
 mod(a, b)
 imod(a, b)
 intdiv(a, b)
-abs(value)
 ```
 
-## Buffer / In-Place
+---
+
+## Fast Buffer Operations
 
 ```text
 addBuffer(a, b, out?)
 subBuffer(a, b, out?)
 mulBuffer(a, b, out?)
 divBuffer(a, b, out?)
-cmpBuffer(a, b)
 
+cmpBuffer(a, b)
+```
+
+---
+
+## In-Place Operations
+
+```text
 addeq(a, b)
 subeq(a, b)
 muleq(a, b)
 diveq(a, b)
 ```
 
+---
+
 ## Logs
 
 ```text
 log10(value)
+log2(value)
+
 log(value, base?)
 ln(value)
+
 exp(value)
 ```
+
+---
 
 ## Comparison
 
 ```text
 cmp(a, b)
 compare(a, b)
+
 eq(a, b)
 
 le(a, b)
@@ -1371,6 +2582,8 @@ min(...)
 max(...)
 ```
 
+---
+
 ## Rounding
 
 ```text
@@ -1380,48 +2593,148 @@ round(value)
 modf(value)
 ```
 
+---
+
 ## Formatting
 
 ```text
 toSuffix(value)
+
+toESuffix(value, switchAt?)
+toExponentSuffix(value, switchAt?)
+toExtendedSuffix(value, switchAt?)
+
 format(value, digits?, hyperAt?)
-toStr(value)
-toString(value)
-percent(a, b)
+
+percent(value, maximum)
 ```
 
-## Encoding
-
-```text
-lbencode(value)
-lbdecode(number)
-encodeData(value, old?)
-```
+---
 
 ## Inspection
 
 ```text
 sign(value)
 exponent(value)
+
 isNaN(value)
 isZero(value)
 isPositive(value)
 isNegative(value)
+
+isFloat(value)
+isFinite(value)
 isBnum(value)
 ```
 
-## Utility / Economy
+---
+
+## Random
 
 ```text
-random(min?, max?)
-clamp(value, min, max)
+random()
+random(minimum, maximum)
+```
 
-maxBuy(funds, cost, multiplier)
+---
+
+## Leaderboard Encoding
+
+```text
+lbencode(value)
+lbdecode(encoded)
+
+encodeData(newValue, oldEncoded?)
+```
+
+---
+
+## Purchase / Max Buy
+
+```text
+canAfford(funds, cost)
+
+nextCost(cost, multiplier, owned)
+nextCostNumber(cost, multiplier, ownedNumber)
+
+bulkCost(cost, multiplier, amount)
+bulkCostNumber(cost, multiplier, amountNumber)
+
+maxBuy(funds, currentCost, multiplier)
+maxBuyBnum(funds, currentCost, multiplier)
+
+maxBuyLimited(
+	funds,
+	currentCost,
+	multiplier,
+	limit
+)
+
+buyMax(
+	funds,
+	currentCost,
+	multiplier
+)
+
+buyMaxLimited(
+	funds,
+	currentCost,
+	multiplier,
+	limit
+)
+```
+
+Aliases:
+
+```text
+maxBuyBig     -> maxBuyBnum
+maxBuyCapped  -> maxBuyLimited
+buyMaxCapped  -> buyMaxLimited
+
+totalCost     -> bulkCost
+costAt        -> nextCost
+```
+
+---
+
+## Economy / Scaling
+
+```text
+linear(base, increment, level)
+linearNumber(base, increment, levelNumber)
+
+softCap(value, cap, power)
+
+milestoneCount(value, step)
+milestone(value, step, bonus)
+
 scaleCurve(value, base, exponent, mode)
 progress(value, goal, mode)
+
 dynamicCost(cost, owned, scale, method)
+
 eta(current, goal, rate)
+
+clamp(value, minimum, maximum)
 ```
+
+Scale modes:
+
+```text
+linear
+exp
+sigmoid
+```
+
+Dynamic cost methods:
+
+```text
+exp
+linear
+hybrid
+```
+
+---
 
 ## Compatibility
 
@@ -1431,82 +2744,287 @@ compat.sub
 compat.mul
 compat.div
 compat.pow
+
 compat.cmp
 compat.eq
+
 compat.format
-```
+compat.toESuffix
 
-## Metadata
+compat.maxBuy
+compat.maxBuyBnum
+compat.maxBuyLimited
+compat.buyMaxLimited
 
-```lua
-print(Bnum.VERSION)         -- "1.1.0"
-print(Bnum.STORAGE_VERSION) -- 1
-print(Bnum.SIZE)            -- 12
+compat.bulkCost
+compat.nextCost
+
+compat.linear
+compat.softCap
+compat.milestone
 ```
 
 ---
 
-# Migration Notes for v1.2+
+# v1.2.0 Changes
 
-The biggest API rule introduced by the v1.2 line is:
+## New exponent-suffix formatter
 
-> Core math functions operate directly on Bnum buffers and do not automatically coerce every argument.
-
-Old convenience-style code:
+Added:
 
 ```lua
-local result = Bnum.compat.add(100, "1e6")
+Bnum.toESuffix()
 ```
 
-Recommended v1.1.0 code:
+Examples:
+
+```text
+1e1000     -> E1k
+1e1020     -> E1.02k
+1e1200     -> E1.2k
+1e1000000  -> E1m
+```
+
+Aliases:
+
+```text
+toExponentSuffix
+toExtendedSuffix
+```
+
+---
+
+## `toSuffix()` now truncates
+
+v1.2.0 changed compact suffix display to truncation.
+
+Before the intended v1.2.0 behavior:
+
+```text
+1.095e3 -> 1.1k
+```
+
+Current behavior:
+
+```text
+1.095e3 -> 1.09k
+```
+
+This prevents the displayed number from visually advancing before the underlying value reaches that point.
+
+---
+
+## Trailing zero cleanup
+
+```text
+1.10k -> 1.1k
+1.20k -> 1.2k
+```
+
+while preserving meaningful zeros:
+
+```text
+1.02k -> 1.02k
+```
+
+---
+
+## Whole upgrade counts
+
+`bulkCostNumber()` now floors normal-number purchase amounts.
+
+```text
+2.9 purchases -> 2 purchases
+```
+
+This keeps upgrade buying integer-based.
+
+---
+
+## v1.2.5 fixes retained
+
+v1.2.0 includes the previous fixes for:
+
+- verified Max Buy affordability boundaries
+- flat-cost Max Buy handling
+- negative-one power sign behavior
+- `maxBuyLimited()`
+- `buyMaxLimited()`
+- limited-purchase total-cost recalculation
+
+---
+
+# Migration from Older Bnum Releases
+
+## From pre-v1.2 style
+
+Do not rely on every core operation accepting arbitrary strings/numbers.
+
+Instead of repeatedly doing:
 
 ```lua
-local a = Bnum.fromNumber(100)
-local b = Bnum.fromString("1e6")
-
-local result = Bnum.add(a, b)
+local Result = Bnum.compat.mul(
+	"1e100",
+	2
+)
 ```
 
-This removes repeated type checking and conversion overhead from the hot path.
+prefer:
+
+```lua
+local Value = Bnum.fromString("1e100")
+local Multiplier = Bnum.fromNumber(2)
+
+Bnum.mul(Value, Multiplier)
+```
+
+---
+
+## From v1.2.5
+
+The main visible change is `toSuffix()`.
+
+If your UI expected rounded compact suffixes:
+
+```text
+1.095k -> 1.1k
+```
+
+that is no longer the behavior.
+
+v1.2.0 intentionally displays:
+
+```text
+1.095k -> 1.09k
+```
+
+Use `format()` when rounded display behavior is desired.
+
+---
+
+## Extreme values
+
+If you previously used:
+
+```lua
+Bnum.toSuffix(Value)
+```
+
+and want compressed exponent notation after `1e1000`, switch to:
+
+```lua
+Bnum.toESuffix(Value)
+```
+
+Because `toESuffix()` uses `toSuffix()` below its threshold, it can often replace separate normal/extreme formatting logic.
 
 ---
 
 # Recommended Project Pattern
 
-Convert at the edge:
+## 1. Convert when loading
 
 ```lua
-local coins = Bnum.fromString(savedCoins)
+local Coins = Bnum.fromString(SavedCoins)
 ```
 
-Operate with Bnums:
+## 2. Keep gameplay values as Bnums
 
 ```lua
-Bnum.addeq(coins, reward)
-Bnum.muleq(coins, multiplier)
+Bnum.addeq(Coins, Reward)
+Bnum.muleq(Coins, Multiplier)
 ```
 
-Display only when needed:
+## 3. Only format for display
 
 ```lua
-coinsLabel.Text = Bnum.toSuffix(coins)
+CoinsLabel.Text = Bnum.toESuffix(Coins)
 ```
 
-Serialize only when saving:
+## 4. Serialize when saving
 
 ```lua
-savedCoins = Bnum.toStr(coins)
+SavedCoins = Bnum.toString(Coins)
 ```
 
-That pattern keeps conversion and string work away from gameplay math.
+This keeps string conversion and type checking away from the gameplay hot path.
+
+---
+
+# Full Upgrade Button Example
+
+This combines the v1.2.0 purchase APIs into one practical pattern.
+
+```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Bnum = require(ReplicatedStorage.Bnum)
+
+local Money = Bnum.fromString("1e20")
+
+local UpgradeCount = 10
+
+local BaseCost = Bnum.fromNumber(100)
+local CostIncrease = Bnum.fromNumber(10)
+
+local function GetCurrentCost(): buffer
+	return Bnum.nextCostNumber(
+		BaseCost,
+		CostIncrease,
+		UpgradeCount
+	)
+end
+
+local function BuyAmount(MaxAmount: number)
+	local CurrentCost = GetCurrentCost()
+
+	local Amount, TotalCost, Remaining = Bnum.buyMaxLimited(
+		Money,
+		CurrentCost,
+		CostIncrease,
+		MaxAmount
+	)
+
+	if Amount <= 0 then
+		return
+	end
+
+	UpgradeCount += Amount
+	Money = Remaining
+
+	print("Bought:", Amount)
+	print("Owned:", UpgradeCount)
+	print("Spent:", Bnum.toSuffix(TotalCost))
+	print("Money:", Bnum.toESuffix(Money))
+	print("Next Cost:", Bnum.toESuffix(GetCurrentCost()))
+end
+
+BuyAmount(2)
+```
+
+If the player owns 10 upgrades and can afford 8:
+
+```text
+BuyAmount(2)
+```
+
+only purchases:
+
+```text
+2
+```
+
+so:
+
+```text
+10 owned + 2 bought = 12 owned
+```
 
 ---
 
 # Version
 
 ```text
-Bnum v1.1.0
+Bnum v1.2.0
 Storage Version 1
-Buffer Size 12 bytes
+12-byte buffer representation
 ```
-
