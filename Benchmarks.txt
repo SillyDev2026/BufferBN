@@ -1,0 +1,751 @@
+  
+  ================================================================================================================
+                                BNUM v1.2 - COMPLETE FUNCTION BENCHMARK
+  ================================================================================================================
+  Module: ReplicatedStorage.Bnum
+  Version: 1.2
+  Storage version: 1
+  Buffer size: 12 bytes
+  Samples per case: 5
+  Fast loops: 250000
+  Normal loops: 100000
+  Heavy loops: 25000
+  Very-heavy loops: 5000
+  Meta loops: 25
+  Primary timing: baseline/reset-adjusted net time
+  Raw timing: actual timed closure + API (+ reset when required)
+  Output format: compact-v2
+  ================================================================================================================
+  
+  [VALIDATION]
+  ----------------------------------------------------------------------------------------------------------------
+    PASS  core API exists: ensure
+    PASS  core API exists: clone
+    PASS  core API exists: new
+    PASS  core API exists: fromNumber
+    PASS  core API exists: fromString
+    PASS  core API exists: addBuffer
+    PASS  core API exists: subBuffer
+    PASS  core API exists: mulBuffer
+    PASS  core API exists: divBuffer
+    PASS  core API exists: cmpBuffer
+    PASS  core API exists: addeq
+    PASS  core API exists: subeq
+    PASS  core API exists: muleq
+    PASS  core API exists: diveq
+    PASS  core API exists: add
+    PASS  core API exists: sub
+    PASS  core API exists: subz
+    PASS  core API exists: mul
+    PASS  core API exists: div
+    PASS  core API exists: pow
+    PASS  core API exists: pow10
+    PASS  core API exists: sqrt
+    PASS  core API exists: log10
+    PASS  core API exists: log
+    PASS  core API exists: exp
+    PASS  core API exists: random
+    PASS  core API exists: cmp
+    PASS  core API exists: eq
+    PASS  core API exists: le
+    PASS  core API exists: me
+    PASS  core API exists: leeq
+    PASS  core API exists: meeq
+    PASS  core API exists: min
+    PASS  core API exists: max
+    PASS  core API exists: floor
+    PASS  core API exists: ceil
+    PASS  core API exists: round
+    PASS  core API exists: mod
+    PASS  core API exists: lbencode
+    PASS  core API exists: lbdecode
+    PASS  core API exists: root
+    PASS  core API exists: toNumber
+    PASS  core API exists: isFloat
+    PASS  core API exists: isFinite
+    PASS  core API exists: neg
+    PASS  core API exists: recip
+    PASS  core API exists: cbrt
+    PASS  core API exists: powf
+    PASS  core API exists: log2
+    PASS  core API exists: toSuffix
+    PASS  core API exists: toESuffix
+    PASS  core API exists: format
+    PASS  core API exists: toStr
+    PASS  core API exists: maxBuy
+    PASS  core API exists: maxBuyBnum
+    PASS  core API exists: canAfford
+    PASS  core API exists: bulkCost
+    PASS  core API exists: bulkCostNumber
+    PASS  core API exists: maxBuyLimited
+    PASS  core API exists: nextCost
+    PASS  core API exists: nextCostNumber
+    PASS  core API exists: buyMax
+    PASS  core API exists: buyMaxLimited
+    PASS  core API exists: percent
+    PASS  core API exists: linear
+    PASS  core API exists: linearNumber
+    PASS  core API exists: softCap
+    PASS  core API exists: milestoneCount
+    PASS  core API exists: milestone
+    PASS  core API exists: scaleCurve
+    PASS  core API exists: progress
+    PASS  core API exists: modf
+    PASS  core API exists: encodeData
+    PASS  core API exists: imod
+    PASS  core API exists: intdiv
+    PASS  core API exists: clamp
+    PASS  core API exists: dynamicCost
+    PASS  core API exists: abs
+    PASS  core API exists: eta
+    PASS  core API exists: sign
+    PASS  core API exists: exponent
+    PASS  core API exists: isNaN
+    PASS  core API exists: isZero
+    PASS  core API exists: isPositive
+    PASS  core API exists: isNegative
+    PASS  core API exists: isBnum
+    PASS  core API exists: benchmark
+    PASS  compat table exists
+    PASS  compat API exists: add
+    PASS  compat API exists: sub
+    PASS  compat API exists: mul
+    PASS  compat API exists: div
+    PASS  compat API exists: pow
+    PASS  compat API exists: cmp
+    PASS  compat API exists: eq
+    PASS  compat API exists: format
+    PASS  compat API exists: toESuffix
+    PASS  compat API exists: maxBuy
+    PASS  compat API exists: maxBuyBnum
+    PASS  compat API exists: maxBuyLimited
+    PASS  compat API exists: buyMaxLimited
+    PASS  compat API exists: bulkCost
+    PASS  compat API exists: nextCost
+    PASS  compat API exists: linear
+    PASS  compat API exists: softCap
+    PASS  compat API exists: milestone
+    PASS  alias coerce -> ensure
+    PASS  alias ln -> log
+    PASS  alias lt -> le
+    PASS  alias gt -> me
+    PASS  alias lte -> leeq
+    PASS  alias gte -> meeq
+    PASS  alias compare -> cmp
+    PASS  alias toString -> toStr
+    PASS  alias maxBuyBig -> maxBuyBnum
+    PASS  alias maxBuyCapped -> maxBuyLimited
+    PASS  alias buyMaxCapped -> buyMaxLimited
+    PASS  alias toExponentSuffix -> toESuffix
+    PASS  alias toExtendedSuffix -> toESuffix
+    PASS  alias totalCost -> bulkCost
+    PASS  alias costAt -> nextCost
+    PASS  VERSION == 1.2
+    PASS  SIZE == 12
+    PASS  add 100 + 25 = 125
+    PASS  sub 100 - 25 = 75
+    PASS  mul 100 * 3 = 300
+    PASS  div 100 / 4 = 25
+    PASS  toSuffix 1.095e3 -> 1.09k
+    PASS  toSuffix 1.10e3 -> 1.1k
+    PASS  toSuffix 1.02e3 -> 1.02k
+    PASS  toESuffix 1e1000 -> E1k
+    PASS  toESuffix 1e1020 -> E1.02k
+    PASS  toESuffix 1.2e1000 -> 1.2E1k
+    PASS  (-1)^3 = -1
+    PASS  (-1)^0.5 = NaN
+    PASS  maxBuy example affords 8
+    PASS  maxBuyLimited(...,2) buys 2
+    PASS  limited cost == bulk cost for 2
+    PASS  buyMaxLimited buys 2
+    PASS  buyMaxLimited returns lower remaining money
+    PASS  bulkCostNumber floors fractional upgrade count
+    PASS  built-in benchmark.fromNumber
+    PASS  built-in benchmark.addReuse
+    PASS  built-in benchmark.mulReuse
+    PASS  built-in benchmark.cmp
+  
+  Validation passed: 145
+  Validation failed: 0
+  
+  [BENCHMARK SETUP]
+  ----------------------------------------------------------------------------------------------------------------
+  Registered benchmark cases: 130
+  
+  [COVERAGE AUDIT]
+  ----------------------------------------------------------------------------------------------------------------
+  Canonical APIs expected: 87
+  Compatibility APIs: 18
+  Aliases verified: 15
+  Benchmark cases: 130
+  Untimed canonical APIs: 0
+  Untimed compatibility: 0
+  Coverage audit: PASS
+  
+  [RUNNING FULL BENCHMARK]
+  ----------------------------------------------------------------------------------------------------------------
+  This can produce a large Studio output because every unique API implementation is covered.
+  
+  [1/130] ensure(buffer) | net 21.349 ns | 46.841M/s | raw 26.166 ns
+  [2/130] ensure(number) | net 72.159 ns | 13.858M/s | raw 77.452 ns
+  [3/130] ensure(scientific string) | net 387.164 ns | 2.583M/s | raw 391.956 ns
+  [4/130] clone | net 84.204 ns | 11.876M/s | raw 88.966 ns
+  [5/130] new(1.25, 250) | net 67.907 ns | 14.726M/s | raw 72.669 ns
+  [6/130] fromNumber | net 69.565 ns | 14.375M/s | raw 74.386 ns
+  [7/130] fromString scientific | net 376.676 ns | 2.655M/s | raw 381.440 ns
+  [8/130] toNumber | net 69.995 ns | 14.287M/s | raw 74.765 ns
+  [9/130] toStr | net 208.488 ns | 4.796M/s | raw 213.248 ns
+  [10/130] addBuffer allocate | net 135.069 ns | 7.404M/s | raw 139.839 ns
+  [11/130] addBuffer reuse | net 102.374 ns | 9.768M/s | raw 107.142 ns
+  [12/130] subBuffer allocate | net 134.639 ns | 7.427M/s | raw 139.466 ns
+  [13/130] subBuffer reuse | net 101.813 ns | 9.822M/s | raw 106.577 ns
+  [14/130] mulBuffer allocate | net 72.926 ns | 13.713M/s | raw 77.697 ns
+  [15/130] mulBuffer reuse | net 40.376 ns | 24.767M/s | raw 45.140 ns
+  [16/130] divBuffer allocate | net 73.958 ns | 13.521M/s | raw 78.729 ns
+  [17/130] divBuffer reuse | net 42.895 ns | 23.313M/s | raw 47.661 ns
+  [18/130] cmpBuffer | net 24.446 ns | 40.907M/s | raw 29.220 ns
+  [19/130] addeq | net 105.299 ns | 9.497M/s | raw 147.820 ns
+  [20/130] subeq | net 106.190 ns | 9.417M/s | raw 148.844 ns
+  [21/130] muleq | net 42.088 ns | 23.760M/s | raw 84.650 ns
+  [22/130] diveq | net 43.024 ns | 23.243M/s | raw 85.533 ns
+  [23/130] add | net 134.416 ns | 7.440M/s | raw 139.178 ns
+  [24/130] sub | net 105.587 ns | 9.471M/s | raw 148.032 ns
+  [25/130] subz | net 127.279 ns | 7.857M/s | raw 170.050 ns
+  [26/130] mul | net 42.176 ns | 23.710M/s | raw 84.777 ns
+  [27/130] div | net 43.404 ns | 23.039M/s | raw 85.950 ns
+  [28/130] pow | net 78.486 ns | 12.741M/s | raw 120.948 ns
+  [29/130] powf(number exponent) | net 32.299 ns | 30.961M/s | raw 74.677 ns
+  [30/130] pow10 | net 72.103 ns | 13.869M/s | raw 115.866 ns
+  [31/130] sqrt | net 28.188 ns | 35.476M/s | raw 70.742 ns
+  [32/130] cbrt | net 27.318 ns | 36.606M/s | raw 69.867 ns
+  [33/130] root | net 76.411 ns | 13.087M/s | raw 118.810 ns
+  [34/130] neg | net 26.986 ns | 37.056M/s | raw 69.776 ns
+  [35/130] recip | net 27.536 ns | 36.316M/s | raw 70.129 ns
+  [36/130] abs | net 26.489 ns | 37.752M/s | raw 69.028 ns
+  [37/130] mod | net 123.288 ns | 8.111M/s | raw 165.810 ns
+  [38/130] imod | net 141.667 ns | 7.059M/s | raw 184.324 ns
+  [39/130] intdiv | net 94.423 ns | 10.591M/s | raw 136.997 ns
+  [40/130] log10 | net 39.426 ns | 25.364M/s | raw 81.964 ns
+  [41/130] log2 | net 42.060 ns | 23.776M/s | raw 84.588 ns
+  [42/130] log (natural) | net 41.623 ns | 24.025M/s | raw 84.165 ns
+  [43/130] log base 10 | net 46.643 ns | 21.439M/s | raw 89.296 ns
+  [44/130] exp | net 72.330 ns | 13.826M/s | raw 114.831 ns
+  [45/130] random() | net 112.673 ns | 8.875M/s | raw 117.435 ns
+  [46/130] random(max) | net 119.778 ns | 8.349M/s | raw 124.543 ns
+  [47/130] random(min,max) | net 109.177 ns | 9.159M/s | raw 113.939 ns
+  [48/130] cmp | net 24.311 ns | 41.133M/s | raw 29.095 ns
+  [49/130] eq | net 25.039 ns | 39.938M/s | raw 29.803 ns
+  [50/130] le / lt implementation | net 25.159 ns | 39.747M/s | raw 29.923 ns
+  [51/130] me / gt implementation | net 25.182 ns | 39.710M/s | raw 29.954 ns
+  [52/130] leeq / lte implementation | net 26.118 ns | 38.288M/s | raw 30.904 ns
+  [53/130] meeq / gte implementation | net 25.244 ns | 39.614M/s | raw 30.008 ns
+  [54/130] min(4) | net 65.288 ns | 15.317M/s | raw 70.059 ns
+  [55/130] max(4) | net 64.810 ns | 15.430M/s | raw 69.572 ns
+  [56/130] floor | net 92.450 ns | 10.817M/s | raw 134.980 ns
+  [57/130] ceil | net 90.332 ns | 11.070M/s | raw 132.866 ns
+  [58/130] round | net 92.266 ns | 10.838M/s | raw 134.791 ns
+  [59/130] modf | net 162.124 ns | 6.168M/s | raw 166.888 ns
+  [60/130] toSuffix ~1e3 | net 194.856 ns | 5.132M/s | raw 199.620 ns
+  [61/130] toSuffix ~1e250 | net 212.184 ns | 4.713M/s | raw 216.944 ns
+  [62/130] toSuffix ~1e2500 | net 212.436 ns | 4.707M/s | raw 217.204 ns
+  [63/130] toSuffix tiny | net 66.704 ns | 14.992M/s | raw 71.468 ns
+  [64/130] toESuffix below switch | net 230.716 ns | 4.334M/s | raw 235.476 ns
+  [65/130] toESuffix ~1e1000 | net 330.580 ns | 3.025M/s | raw 335.344 ns
+  [66/130] toESuffix custom switch | net 244.168 ns | 4.096M/s | raw 248.928 ns
+  [67/130] format normal | net 230.060 ns | 4.347M/s | raw 234.820 ns
+  [68/130] format large | net 165.600 ns | 6.039M/s | raw 170.420 ns
+  [69/130] format digits=4 | net 171.880 ns | 5.818M/s | raw 176.644 ns
+  [70/130] format hyperAt=100 | net 76.900 ns | 13.004M/s | raw 81.664 ns
+  [71/130] percent | net 128.520 ns | 7.781M/s | raw 133.280 ns
+  [72/130] lbencode | net 47.505 ns | 21.050M/s | raw 52.277 ns
+  [73/130] lbdecode | net 106.447 ns | 9.394M/s | raw 111.230 ns
+  [74/130] encodeData(new) | net 61.260 ns | 16.324M/s | raw 66.026 ns
+  [75/130] encodeData(new,old) | net 62.584 ns | 15.979M/s | raw 67.347 ns
+  [76/130] maxBuy | net 330.812 ns | 3.023M/s | raw 335.576 ns
+  [77/130] maxBuyBnum | net 386.220 ns | 2.589M/s | raw 391.052 ns
+  [78/130] canAfford | net 29.454 ns | 33.951M/s | raw 34.221 ns
+  [79/130] bulkCost | net 154.024 ns | 6.492M/s | raw 158.784 ns
+  [80/130] bulkCostNumber | net 214.412 ns | 4.664M/s | raw 219.176 ns
+  [81/130] maxBuyLimited(limit=2) | net 557.592 ns | 1.793M/s | raw 562.356 ns
+  [82/130] nextCost | net 73.672 ns | 13.574M/s | raw 78.436 ns
+  [83/130] nextCostNumber | net 67.388 ns | 14.839M/s | raw 72.152 ns
+  [84/130] buyMax | net 495.604 ns | 2.018M/s | raw 500.372 ns
+  [85/130] buyMaxLimited(limit=2) | net 738.172 ns | 1.355M/s | raw 742.936 ns
+  [86/130] linear | net 153.028 ns | 6.535M/s | raw 157.792 ns
+  [87/130] linearNumber | net 146.296 ns | 6.835M/s | raw 151.064 ns
+  [88/130] softCap above cap | net 114.968 ns | 8.698M/s | raw 119.728 ns
+  [89/130] milestoneCount | net 172.132 ns | 5.809M/s | raw 176.896 ns
+  [90/130] milestone | net 313.880 ns | 3.186M/s | raw 318.644 ns
+  [91/130] scaleCurve linear | net 119.232 ns | 8.387M/s | raw 161.700 ns
+  [92/130] scaleCurve exp | net 152.848 ns | 6.542M/s | raw 195.220 ns
+  [93/130] scaleCurve sigmoid | net 139.248 ns | 7.181M/s | raw 181.756 ns
+  [94/130] progress linear | net 132.320 ns | 7.557M/s | raw 175.052 ns
+  [95/130] progress exp | net 89.672 ns | 11.152M/s | raw 133.260 ns
+  [96/130] progress sigmoid | net 113.220 ns | 8.832M/s | raw 155.928 ns
+  [97/130] clamp | net 34.668 ns | 28.845M/s | raw 39.483 ns
+  [98/130] dynamicCost exp | net 77.164 ns | 12.959M/s | raw 119.652 ns
+  [99/130] dynamicCost linear | net 122.704 ns | 8.150M/s | raw 165.276 ns
+  [100/130] dynamicCost hybrid | net 132.796 ns | 7.530M/s | raw 175.300 ns
+  [101/130] eta | net 95.184 ns | 10.506M/s | raw 137.672 ns
+  [102/130] sign | net 21.748 ns | 45.981M/s | raw 26.515 ns
+  [103/130] exponent | net 21.797 ns | 45.877M/s | raw 26.582 ns
+  [104/130] isNaN | net 22.821 ns | 43.820M/s | raw 27.588 ns
+  [105/130] isZero | net 22.065 ns | 45.320M/s | raw 26.832 ns
+  [106/130] isPositive | net 22.048 ns | 45.356M/s | raw 26.815 ns
+  [107/130] isNegative | net 22.277 ns | 44.890M/s | raw 27.046 ns
+  [108/130] isFloat | net 23.387 ns | 42.758M/s | raw 28.158 ns
+  [109/130] isFinite | net 23.367 ns | 42.796M/s | raw 28.134 ns
+  [110/130] isBnum(buffer) | net 40.779 ns | 24.523M/s | raw 45.558 ns
+  [111/130] isBnum(number) | net 25.832 ns | 38.712M/s | raw 30.624 ns
+  [112/130] compat.add(number,string) | net 564.968 ns | 1.770M/s | raw 569.780 ns
+  [113/130] compat.sub(number,number) | net 252.408 ns | 3.962M/s | raw 257.172 ns
+  [114/130] compat.mul(string,number) | net 418.456 ns | 2.390M/s | raw 423.216 ns
+  [115/130] compat.div(string,number) | net 419.460 ns | 2.384M/s | raw 424.224 ns
+  [116/130] compat.pow(number,number) | net 224.660 ns | 4.451M/s | raw 229.424 ns
+  [117/130] compat.cmp(number,string) | net 442.872 ns | 2.258M/s | raw 447.716 ns
+  [118/130] compat.eq(number,number) | net 174.556 ns | 5.729M/s | raw 179.320 ns
+  [119/130] compat.format(string) | net 564.308 ns | 1.772M/s | raw 569.072 ns
+  [120/130] compat.toESuffix(string) | net 711.156 ns | 1.406M/s | raw 715.916 ns
+  [121/130] compat.maxBuy | net 1.042 us | 959.914K/s | raw 1.047 us
+  [122/130] compat.maxBuyBnum | net 1.090 us | 917.128K/s | raw 1.095 us
+  [123/130] compat.maxBuyLimited | net 1.268 us | 788.532K/s | raw 1.273 us
+  [124/130] compat.buyMaxLimited | net 1.469 us | 680.846K/s | raw 1.474 us
+  [125/130] compat.bulkCost | net 604.240 ns | 1.655M/s | raw 609.020 ns
+  [126/130] compat.nextCost | net 279.520 ns | 3.578M/s | raw 284.300 ns
+  [127/130] compat.linear | net 381.240 ns | 2.623M/s | raw 386.020 ns
+  [128/130] compat.softCap | net 776.120 ns | 1.288M/s | raw 780.900 ns
+  [129/130] compat.milestone | net 543.980 ns | 1.838M/s | raw 548.760 ns
+  [130/130] benchmark(1000) | net 167.108 us | 5.984K/s | raw 167.116 us
+  
+  ================================================================================================================
+                                                 DETAILED RESULTS
+  ================================================================================================================
+  
+  [Construction / Conversion]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  ensure(buffer) | 21.349 ns | 46.841M/s | 26.166 ns
+  range: 21.265 ns - 21.500 ns | baseline: 4.849 ns | loops/sample: 250000
+  ensure(number) | 72.159 ns | 13.858M/s | 77.452 ns
+  range: 71.432 ns - 73.474 ns | baseline: 4.771 ns | loops/sample: 100000
+  ensure(scientific string) | 387.164 ns | 2.583M/s | 391.956 ns
+  range: 384.060 ns - 392.328 ns | baseline: 4.792 ns | loops/sample: 25000
+  clone | 84.204 ns | 11.876M/s | 88.966 ns
+  range: 82.564 ns - 85.442 ns | baseline: 4.762 ns | loops/sample: 100000
+  new(1.25, 250) | 67.907 ns | 14.726M/s | 72.669 ns
+  range: 67.503 ns - 68.217 ns | baseline: 4.762 ns | loops/sample: 100000
+  fromNumber | 69.565 ns | 14.375M/s | 74.386 ns
+  range: 68.369 ns - 70.158 ns | baseline: 4.772 ns | loops/sample: 100000
+  fromString scientific | 376.676 ns | 2.655M/s | 381.440 ns
+  range: 374.088 ns - 380.932 ns | baseline: 4.764 ns | loops/sample: 25000
+  toNumber | 69.995 ns | 14.287M/s | 74.765 ns
+  range: 69.780 ns - 70.225 ns | baseline: 4.770 ns | loops/sample: 250000
+  toStr | 208.488 ns | 4.796M/s | 213.248 ns
+  range: 208.244 ns - 261.180 ns | baseline: 4.760 ns | loops/sample: 25000
+  
+  [Fast Buffer API]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  addBuffer allocate | 135.069 ns | 7.404M/s | 139.839 ns
+  range: 133.245 ns - 136.160 ns | baseline: 4.770 ns | loops/sample: 100000
+  addBuffer reuse | 102.374 ns | 9.768M/s | 107.142 ns
+  range: 102.171 ns - 130.446 ns | baseline: 4.768 ns | loops/sample: 250000
+  subBuffer allocate | 134.639 ns | 7.427M/s | 139.466 ns
+  range: 133.359 ns - 135.931 ns | baseline: 4.779 ns | loops/sample: 100000
+  subBuffer reuse | 101.813 ns | 9.822M/s | 106.577 ns
+  range: 101.534 ns - 102.020 ns | baseline: 4.764 ns | loops/sample: 250000
+  mulBuffer allocate | 72.926 ns | 13.713M/s | 77.697 ns
+  range: 71.888 ns - 73.666 ns | baseline: 4.763 ns | loops/sample: 100000
+  mulBuffer reuse | 40.376 ns | 24.767M/s | 45.140 ns
+  range: 40.290 ns - 40.424 ns | baseline: 4.764 ns | loops/sample: 250000
+  divBuffer allocate | 73.958 ns | 13.521M/s | 78.729 ns
+  range: 73.177 ns - 76.005 ns | baseline: 4.771 ns | loops/sample: 100000
+  divBuffer reuse | 42.895 ns | 23.313M/s | 47.661 ns
+  range: 42.791 ns - 43.062 ns | baseline: 4.773 ns | loops/sample: 250000
+  cmpBuffer | 24.446 ns | 40.907M/s | 29.220 ns
+  range: 24.422 ns - 24.494 ns | baseline: 4.774 ns | loops/sample: 250000
+  
+  [In-Place Math]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  addeq | 105.299 ns | 9.497M/s | 147.820 ns
+  range: 104.952 ns - 106.148 ns | baseline: 42.556 ns | loops/sample: 250000
+  subeq | 106.190 ns | 9.417M/s | 148.844 ns
+  range: 105.860 ns - 141.687 ns | baseline: 42.544 ns | loops/sample: 250000
+  muleq | 42.088 ns | 23.760M/s | 84.650 ns
+  range: 41.890 ns - 42.442 ns | baseline: 42.520 ns | loops/sample: 250000
+  diveq | 43.024 ns | 23.243M/s | 85.533 ns
+  range: 42.718 ns - 43.742 ns | baseline: 42.509 ns | loops/sample: 250000
+  
+  [Arithmetic]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  add | 134.416 ns | 7.440M/s | 139.178 ns
+  range: 131.971 ns - 139.332 ns | baseline: 4.762 ns | loops/sample: 100000
+  sub | 105.587 ns | 9.471M/s | 148.032 ns
+  range: 105.481 ns - 105.946 ns | baseline: 42.508 ns | loops/sample: 250000
+  subz | 127.279 ns | 7.857M/s | 170.050 ns
+  range: 126.636 ns - 128.459 ns | baseline: 43.046 ns | loops/sample: 250000
+  mul | 42.176 ns | 23.710M/s | 84.777 ns
+  range: 41.624 ns - 43.022 ns | baseline: 42.590 ns | loops/sample: 250000
+  div | 43.404 ns | 23.039M/s | 85.950 ns
+  range: 43.370 ns - 44.379 ns | baseline: 42.500 ns | loops/sample: 250000
+  pow | 78.486 ns | 12.741M/s | 120.948 ns
+  range: 77.976 ns - 78.688 ns | baseline: 42.482 ns | loops/sample: 100000
+  powf(number exponent) | 32.299 ns | 30.961M/s | 74.677 ns
+  range: 31.771 ns - 34.249 ns | baseline: 42.540 ns | loops/sample: 100000
+  pow10 | 72.103 ns | 13.869M/s | 115.866 ns
+  range: 71.134 ns - 73.180 ns | baseline: 43.708 ns | loops/sample: 100000
+  sqrt | 28.188 ns | 35.476M/s | 70.742 ns
+  range: 28.171 ns - 30.383 ns | baseline: 42.468 ns | loops/sample: 250000
+  cbrt | 27.318 ns | 36.606M/s | 69.867 ns
+  range: 27.145 ns - 27.405 ns | baseline: 42.508 ns | loops/sample: 250000
+  root | 76.411 ns | 13.087M/s | 118.810 ns
+  range: 75.933 ns - 76.493 ns | baseline: 42.417 ns | loops/sample: 100000
+  neg | 26.986 ns | 37.056M/s | 69.776 ns
+  range: 26.883 ns - 35.297 ns | baseline: 42.721 ns | loops/sample: 250000
+  recip | 27.536 ns | 36.316M/s | 70.129 ns
+  range: 27.442 ns - 28.939 ns | baseline: 42.574 ns | loops/sample: 250000
+  abs | 26.489 ns | 37.752M/s | 69.028 ns
+  range: 26.340 ns - 26.816 ns | baseline: 42.539 ns | loops/sample: 250000
+  mod | 123.288 ns | 8.111M/s | 165.810 ns
+  range: 123.038 ns - 123.427 ns | baseline: 42.538 ns | loops/sample: 100000
+  imod | 141.667 ns | 7.059M/s | 184.324 ns
+  range: 141.099 ns - 142.070 ns | baseline: 42.569 ns | loops/sample: 100000
+  intdiv | 94.423 ns | 10.591M/s | 136.997 ns
+  range: 94.130 ns - 94.549 ns | baseline: 42.543 ns | loops/sample: 100000
+  
+  [Logs]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  log10 | 39.426 ns | 25.364M/s | 81.964 ns
+  range: 39.135 ns - 41.488 ns | baseline: 42.539 ns | loops/sample: 250000
+  log2 | 42.060 ns | 23.776M/s | 84.588 ns
+  range: 41.631 ns - 42.277 ns | baseline: 42.575 ns | loops/sample: 100000
+  log (natural) | 41.623 ns | 24.025M/s | 84.165 ns
+  range: 41.288 ns - 41.923 ns | baseline: 42.537 ns | loops/sample: 100000
+  log base 10 | 46.643 ns | 21.439M/s | 89.296 ns
+  range: 43.513 ns - 47.067 ns | baseline: 42.584 ns | loops/sample: 100000
+  exp | 72.330 ns | 13.826M/s | 114.831 ns
+  range: 72.111 ns - 73.360 ns | baseline: 42.551 ns | loops/sample: 100000
+  
+  [Random]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  random() | 112.673 ns | 8.875M/s | 117.435 ns
+  range: 111.587 ns - 113.129 ns | baseline: 4.779 ns | loops/sample: 100000
+  random(max) | 119.778 ns | 8.349M/s | 124.543 ns
+  range: 117.806 ns - 127.968 ns | baseline: 4.765 ns | loops/sample: 100000
+  random(min,max) | 109.177 ns | 9.159M/s | 113.939 ns
+  range: 107.280 ns - 110.069 ns | baseline: 4.772 ns | loops/sample: 100000
+  
+  [Comparison]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  cmp | 24.311 ns | 41.133M/s | 29.095 ns
+  range: 24.173 ns - 24.386 ns | baseline: 4.767 ns | loops/sample: 250000
+  eq | 25.039 ns | 39.938M/s | 29.803 ns
+  range: 24.827 ns - 25.079 ns | baseline: 4.770 ns | loops/sample: 250000
+  le / lt implementation | 25.159 ns | 39.747M/s | 29.923 ns
+  range: 25.059 ns - 25.302 ns | baseline: 4.782 ns | loops/sample: 250000
+  me / gt implementation | 25.182 ns | 39.710M/s | 29.954 ns
+  range: 25.116 ns - 25.292 ns | baseline: 4.778 ns | loops/sample: 250000
+  leeq / lte implementation | 26.118 ns | 38.288M/s | 30.904 ns
+  range: 26.058 ns - 26.181 ns | baseline: 4.765 ns | loops/sample: 250000
+  meeq / gte implementation | 25.244 ns | 39.614M/s | 30.008 ns
+  range: 25.033 ns - 25.269 ns | baseline: 4.764 ns | loops/sample: 250000
+  min(4) | 65.288 ns | 15.317M/s | 70.059 ns
+  range: 65.083 ns - 65.361 ns | baseline: 4.769 ns | loops/sample: 100000
+  max(4) | 64.810 ns | 15.430M/s | 69.572 ns
+  range: 64.495 ns - 65.180 ns | baseline: 4.762 ns | loops/sample: 100000
+  
+  [Rounding]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  floor | 92.450 ns | 10.817M/s | 134.980 ns
+  range: 92.376 ns - 92.991 ns | baseline: 42.604 ns | loops/sample: 100000
+  ceil | 90.332 ns | 11.070M/s | 132.866 ns
+  range: 90.302 ns - 93.082 ns | baseline: 42.529 ns | loops/sample: 100000
+  round | 92.266 ns | 10.838M/s | 134.791 ns
+  range: 92.173 ns - 92.577 ns | baseline: 42.525 ns | loops/sample: 100000
+  modf | 162.124 ns | 6.168M/s | 166.888 ns
+  range: 158.660 ns - 168.932 ns | baseline: 4.764 ns | loops/sample: 25000
+  
+  [Formatting]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  toSuffix ~1e3 | 194.856 ns | 5.132M/s | 199.620 ns
+  range: 194.520 ns - 217.268 ns | baseline: 4.768 ns | loops/sample: 25000
+  toSuffix ~1e250 | 212.184 ns | 4.713M/s | 216.944 ns
+  range: 211.888 ns - 213.008 ns | baseline: 4.764 ns | loops/sample: 25000
+  toSuffix ~1e2500 | 212.436 ns | 4.707M/s | 217.204 ns
+  range: 212.316 ns - 212.620 ns | baseline: 4.764 ns | loops/sample: 25000
+  toSuffix tiny | 66.704 ns | 14.992M/s | 71.468 ns
+  range: 66.620 ns - 66.716 ns | baseline: 4.764 ns | loops/sample: 25000
+  toESuffix below switch | 230.716 ns | 4.334M/s | 235.476 ns
+  range: 230.500 ns - 230.884 ns | baseline: 4.764 ns | loops/sample: 25000
+  toESuffix ~1e1000 | 330.580 ns | 3.025M/s | 335.344 ns
+  range: 329.992 ns - 340.348 ns | baseline: 4.764 ns | loops/sample: 25000
+  toESuffix custom switch | 244.168 ns | 4.096M/s | 248.928 ns
+  range: 243.964 ns - 244.536 ns | baseline: 4.764 ns | loops/sample: 25000
+  format normal | 230.060 ns | 4.347M/s | 234.820 ns
+  range: 229.880 ns - 230.984 ns | baseline: 4.764 ns | loops/sample: 25000
+  format large | 165.600 ns | 6.039M/s | 170.420 ns
+  range: 165.512 ns - 165.792 ns | baseline: 4.764 ns | loops/sample: 25000
+  format digits=4 | 171.880 ns | 5.818M/s | 176.644 ns
+  range: 171.796 ns - 174.264 ns | baseline: 4.764 ns | loops/sample: 25000
+  format hyperAt=100 | 76.900 ns | 13.004M/s | 81.664 ns
+  range: 76.820 ns - 77.200 ns | baseline: 4.764 ns | loops/sample: 25000
+  percent | 128.520 ns | 7.781M/s | 133.280 ns
+  range: 128.500 ns - 128.968 ns | baseline: 4.764 ns | loops/sample: 25000
+  
+  [Encoding]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  lbencode | 47.505 ns | 21.050M/s | 52.277 ns
+  range: 47.459 ns - 47.615 ns | baseline: 4.762 ns | loops/sample: 100000
+  lbdecode | 106.447 ns | 9.394M/s | 111.230 ns
+  range: 104.918 ns - 106.731 ns | baseline: 4.778 ns | loops/sample: 100000
+  encodeData(new) | 61.260 ns | 16.324M/s | 66.026 ns
+  range: 60.962 ns - 61.681 ns | baseline: 4.776 ns | loops/sample: 100000
+  encodeData(new,old) | 62.584 ns | 15.979M/s | 67.347 ns
+  range: 62.238 ns - 63.924 ns | baseline: 4.778 ns | loops/sample: 100000
+  
+  [Max Buy / Purchase]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  maxBuy | 330.812 ns | 3.023M/s | 335.576 ns
+  range: 329.544 ns - 335.160 ns | baseline: 4.764 ns | loops/sample: 25000
+  maxBuyBnum | 386.220 ns | 2.589M/s | 391.052 ns
+  range: 383.952 ns - 389.116 ns | baseline: 4.764 ns | loops/sample: 25000
+  canAfford | 29.454 ns | 33.951M/s | 34.221 ns
+  range: 29.142 ns - 29.720 ns | baseline: 4.767 ns | loops/sample: 250000
+  bulkCost | 154.024 ns | 6.492M/s | 158.784 ns
+  range: 145.008 ns - 155.944 ns | baseline: 4.760 ns | loops/sample: 25000
+  bulkCostNumber | 214.412 ns | 4.664M/s | 219.176 ns
+  range: 211.244 ns - 219.052 ns | baseline: 4.764 ns | loops/sample: 25000
+  maxBuyLimited(limit=2) | 557.592 ns | 1.793M/s | 562.356 ns
+  range: 556.252 ns - 564.220 ns | baseline: 4.764 ns | loops/sample: 25000
+  nextCost | 73.672 ns | 13.574M/s | 78.436 ns
+  range: 67.080 ns - 74.904 ns | baseline: 4.764 ns | loops/sample: 25000
+  nextCostNumber | 67.388 ns | 14.839M/s | 72.152 ns
+  range: 62.372 ns - 69.324 ns | baseline: 4.764 ns | loops/sample: 25000
+  buyMax | 495.604 ns | 2.018M/s | 500.372 ns
+  range: 491.124 ns - 497.288 ns | baseline: 4.768 ns | loops/sample: 25000
+  buyMaxLimited(limit=2) | 738.172 ns | 1.355M/s | 742.936 ns
+  range: 737.260 ns - 743.168 ns | baseline: 4.764 ns | loops/sample: 25000
+  
+  [Economy / Scaling]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  linear | 153.028 ns | 6.535M/s | 157.792 ns
+  range: 146.524 ns - 155.448 ns | baseline: 4.764 ns | loops/sample: 25000
+  linearNumber | 146.296 ns | 6.835M/s | 151.064 ns
+  range: 143.916 ns - 172.112 ns | baseline: 4.768 ns | loops/sample: 25000
+  softCap above cap | 114.968 ns | 8.698M/s | 119.728 ns
+  range: 111.320 ns - 119.872 ns | baseline: 4.764 ns | loops/sample: 25000
+  milestoneCount | 172.132 ns | 5.809M/s | 176.896 ns
+  range: 168.876 ns - 176.676 ns | baseline: 4.764 ns | loops/sample: 25000
+  milestone | 313.880 ns | 3.186M/s | 318.644 ns
+  range: 310.380 ns - 317.444 ns | baseline: 4.764 ns | loops/sample: 25000
+  scaleCurve linear | 119.232 ns | 8.387M/s | 161.700 ns
+  range: 118.592 ns - 119.756 ns | baseline: 42.460 ns | loops/sample: 25000
+  scaleCurve exp | 152.848 ns | 6.542M/s | 195.220 ns
+  range: 151.228 ns - 154.056 ns | baseline: 42.420 ns | loops/sample: 25000
+  scaleCurve sigmoid | 139.248 ns | 7.181M/s | 181.756 ns
+  range: 138.860 ns - 139.848 ns | baseline: 42.576 ns | loops/sample: 25000
+  progress linear | 132.320 ns | 7.557M/s | 175.052 ns
+  range: 131.872 ns - 138.568 ns | baseline: 42.732 ns | loops/sample: 25000
+  progress exp | 89.672 ns | 11.152M/s | 133.260 ns
+  range: 89.620 ns - 91.056 ns | baseline: 43.288 ns | loops/sample: 25000
+  progress sigmoid | 113.220 ns | 8.832M/s | 155.928 ns
+  range: 111.912 ns - 117.432 ns | baseline: 42.436 ns | loops/sample: 25000
+  clamp | 34.668 ns | 28.845M/s | 39.483 ns
+  range: 34.645 ns - 34.788 ns | baseline: 4.780 ns | loops/sample: 250000
+  dynamicCost exp | 77.164 ns | 12.959M/s | 119.652 ns
+  range: 76.072 ns - 77.208 ns | baseline: 42.492 ns | loops/sample: 25000
+  dynamicCost linear | 122.704 ns | 8.150M/s | 165.276 ns
+  range: 122.544 ns - 123.272 ns | baseline: 42.624 ns | loops/sample: 25000
+  dynamicCost hybrid | 132.796 ns | 7.530M/s | 175.300 ns
+  range: 132.612 ns - 132.804 ns | baseline: 42.520 ns | loops/sample: 25000
+  eta | 95.184 ns | 10.506M/s | 137.672 ns
+  range: 95.056 ns - 96.816 ns | baseline: 42.488 ns | loops/sample: 25000
+  
+  [Inspection]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  sign | 21.748 ns | 45.981M/s | 26.515 ns
+  range: 21.733 ns - 24.019 ns | baseline: 4.767 ns | loops/sample: 250000
+  exponent | 21.797 ns | 45.877M/s | 26.582 ns
+  range: 21.784 ns - 21.820 ns | baseline: 4.768 ns | loops/sample: 250000
+  isNaN | 22.821 ns | 43.820M/s | 27.588 ns
+  range: 22.781 ns - 23.162 ns | baseline: 4.767 ns | loops/sample: 250000
+  isZero | 22.065 ns | 45.320M/s | 26.832 ns
+  range: 22.036 ns - 22.271 ns | baseline: 4.772 ns | loops/sample: 250000
+  isPositive | 22.048 ns | 45.356M/s | 26.815 ns
+  range: 21.998 ns - 22.223 ns | baseline: 4.768 ns | loops/sample: 250000
+  isNegative | 22.277 ns | 44.890M/s | 27.046 ns
+  range: 22.265 ns - 22.402 ns | baseline: 4.767 ns | loops/sample: 250000
+  isFloat | 23.387 ns | 42.758M/s | 28.158 ns
+  range: 23.382 ns - 23.400 ns | baseline: 4.767 ns | loops/sample: 250000
+  isFinite | 23.367 ns | 42.796M/s | 28.134 ns
+  range: 23.347 ns - 23.785 ns | baseline: 4.768 ns | loops/sample: 250000
+  isBnum(buffer) | 40.779 ns | 24.523M/s | 45.558 ns
+  range: 40.500 ns - 41.040 ns | baseline: 4.772 ns | loops/sample: 250000
+  isBnum(number) | 25.832 ns | 38.712M/s | 30.624 ns
+  range: 25.753 ns - 25.926 ns | baseline: 4.780 ns | loops/sample: 250000
+  
+  [Compatibility]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  compat.add(number,string) | 564.968 ns | 1.770M/s | 569.780 ns
+  range: 560.152 ns - 569.964 ns | baseline: 4.768 ns | loops/sample: 25000
+  compat.sub(number,number) | 252.408 ns | 3.962M/s | 257.172 ns
+  range: 249.556 ns - 256.652 ns | baseline: 4.764 ns | loops/sample: 25000
+  compat.mul(string,number) | 418.456 ns | 2.390M/s | 423.216 ns
+  range: 412.372 ns - 425.672 ns | baseline: 4.764 ns | loops/sample: 25000
+  compat.div(string,number) | 419.460 ns | 2.384M/s | 424.224 ns
+  range: 416.468 ns - 422.744 ns | baseline: 4.764 ns | loops/sample: 25000
+  compat.pow(number,number) | 224.660 ns | 4.451M/s | 229.424 ns
+  range: 221.784 ns - 228.696 ns | baseline: 4.764 ns | loops/sample: 25000
+  compat.cmp(number,string) | 442.872 ns | 2.258M/s | 447.716 ns
+  range: 440.672 ns - 445.848 ns | baseline: 4.764 ns | loops/sample: 25000
+  compat.eq(number,number) | 174.556 ns | 5.729M/s | 179.320 ns
+  range: 173.648 ns - 179.632 ns | baseline: 4.764 ns | loops/sample: 25000
+  compat.format(string) | 564.308 ns | 1.772M/s | 569.072 ns
+  range: 561.204 ns - 567.704 ns | baseline: 4.764 ns | loops/sample: 25000
+  compat.toESuffix(string) | 711.156 ns | 1.406M/s | 715.916 ns
+  range: 703.200 ns - 712.900 ns | baseline: 4.764 ns | loops/sample: 25000
+  compat.maxBuy | 1.042 us | 959.914K/s | 1.047 us
+  range: 1.012 us - 1.062 us | baseline: 4.780 ns | loops/sample: 5000
+  compat.maxBuyBnum | 1.090 us | 917.128K/s | 1.095 us
+  range: 1.055 us - 1.132 us | baseline: 4.780 ns | loops/sample: 5000
+  compat.maxBuyLimited | 1.268 us | 788.532K/s | 1.273 us
+  range: 1.253 us - 1.283 us | baseline: 4.780 ns | loops/sample: 5000
+  compat.buyMaxLimited | 1.469 us | 680.846K/s | 1.474 us
+  range: 1.449 us - 1.499 us | baseline: 4.780 ns | loops/sample: 5000
+  compat.bulkCost | 604.240 ns | 1.655M/s | 609.020 ns
+  range: 565.040 ns - 620.220 ns | baseline: 4.780 ns | loops/sample: 5000
+  compat.nextCost | 279.520 ns | 3.578M/s | 284.300 ns
+  range: 273.860 ns - 301.440 ns | baseline: 4.780 ns | loops/sample: 5000
+  compat.linear | 381.240 ns | 2.623M/s | 386.020 ns
+  range: 358.040 ns - 387.460 ns | baseline: 4.780 ns | loops/sample: 5000
+  compat.softCap | 776.120 ns | 1.288M/s | 780.900 ns
+  range: 762.720 ns - 792.020 ns | baseline: 4.780 ns | loops/sample: 5000
+  compat.milestone | 543.980 ns | 1.838M/s | 548.760 ns
+  range: 504.800 ns - 554.860 ns | baseline: 4.780 ns | loops/sample: 5000
+  
+  [Meta]
+  ----------------------------------------------------------------------------------------------------------------
+  Function | Net time/op | Ops/sec | Raw time/op
+  ----------------------------------------------------------------------------------------------------------------
+  benchmark(1000) | 167.108 us | 5.984K/s | 167.116 us
+  range: 163.468 us - 172.024 us | baseline: 8.000 ns | loops/sample: 25
+  
+  ================================================================================================================
+                                               CATEGORY SUMMARY
+  ================================================================================================================
+  Category | Cases | Geo mean | Geo ops/s
+  ----------------------------------------------------------------------------------------------------------------
+  Construction / Conversion | 9 | 102.994 ns | 9.709M/s
+  Fast Buffer API | 9 | 70.547 ns | 14.175M/s
+  In-Place Math | 4 | 67.080 ns | 14.908M/s
+  Arithmetic | 17 | 58.665 ns | 17.046M/s
+  Logs | 5 | 47.143 ns | 21.212M/s
+  Random | 3 | 113.791 ns | 8.788M/s
+  Comparison | 8 | 31.913 ns | 31.335M/s
+  Rounding | 4 | 105.721 ns | 9.459M/s
+  Formatting | 12 | 172.745 ns | 5.789M/s
+  Encoding | 4 | 66.356 ns | 15.070M/s
+  Max Buy / Purchase | 10 | 204.169 ns | 4.898M/s
+  Economy / Scaling | 16 | 120.466 ns | 8.301M/s
+  Inspection | 10 | 24.150 ns | 41.407M/s
+  Compatibility | 18 | 527.600 ns | 1.895M/s
+  Meta | 1 | 167.108 us | 5.984K/s
+  
+  ================================================================================================================
+                                                FASTEST PATHS
+  ================================================================================================================
+  1. ensure(buffer) | 21.349 ns | 46.841M/s
+  2. sign | 21.748 ns | 45.981M/s
+  3. exponent | 21.797 ns | 45.877M/s
+  4. isPositive | 22.048 ns | 45.356M/s
+  5. isZero | 22.065 ns | 45.320M/s
+  6. isNegative | 22.277 ns | 44.890M/s
+  7. isNaN | 22.821 ns | 43.820M/s
+  8. isFinite | 23.367 ns | 42.796M/s
+  9. isFloat | 23.387 ns | 42.758M/s
+  10. cmp | 24.311 ns | 41.133M/s
+  11. cmpBuffer | 24.446 ns | 40.907M/s
+  12. eq | 25.039 ns | 39.938M/s
+  13. le / lt implementation | 25.159 ns | 39.747M/s
+  14. me / gt implementation | 25.182 ns | 39.710M/s
+  15. meeq / gte implementation | 25.244 ns | 39.614M/s
+  
+  ================================================================================================================
+                                                SLOWEST PATHS
+  ================================================================================================================
+  1. benchmark(1000) | 167.108 us | 5.984K/s
+  2. compat.buyMaxLimited | 1.469 us | 680.846K/s
+  3. compat.maxBuyLimited | 1.268 us | 788.532K/s
+  4. compat.maxBuyBnum | 1.090 us | 917.128K/s
+  5. compat.maxBuy | 1.042 us | 959.914K/s
+  6. compat.softCap | 776.120 ns | 1.288M/s
+  7. buyMaxLimited(limit=2) | 738.172 ns | 1.355M/s
+  8. compat.toESuffix(string) | 711.156 ns | 1.406M/s
+  9. compat.bulkCost | 604.240 ns | 1.655M/s
+  10. compat.add(number,string) | 564.968 ns | 1.770M/s
+  11. compat.format(string) | 564.308 ns | 1.772M/s
+  12. maxBuyLimited(limit=2) | 557.592 ns | 1.793M/s
+  13. compat.milestone | 543.980 ns | 1.838M/s
+  14. buyMax | 495.604 ns | 2.018M/s
+  15. compat.cmp(number,string) | 442.872 ns | 2.258M/s
+  
+  ================================================================================================================
+                                                ALIAS COVERAGE
+  ================================================================================================================
+  coerce -> ensure | same function: true
+  ln -> log | same function: true
+  lt -> le | same function: true
+  gt -> me | same function: true
+  lte -> leeq | same function: true
+  gte -> meeq | same function: true
+  compare -> cmp | same function: true
+  toString -> toStr | same function: true
+  maxBuyBig -> maxBuyBnum | same function: true
+  maxBuyCapped -> maxBuyLimited | same function: true
+  buyMaxCapped -> buyMaxLimited | same function: true
+  toExponentSuffix -> toESuffix | same function: true
+  toExtendedSuffix -> toESuffix | same function: true
+  totalCost -> bulkCost | same function: true
+  costAt -> nextCost | same function: true
+  
+  ================================================================================================================
+                                             BENCHMARK COMPLETE
+  ================================================================================================================
+  Bnum version: 1.2
+  Validation failures: 0
+  Canonical APIs timed: 87
+  Compatibility APIs timed: 18
+  Alias names verified: 15
+  Benchmark cases run: 130
+  Sink type: number
+  
+  Net time subtracts empty-closure overhead and, for mutating tests, reset-copy overhead.
+  Raw time shows the actual measured test loop before that subtraction.
+  Use multiple runs before treating very small nanosecond differences as meaningful.
+  ================================================================================================================
