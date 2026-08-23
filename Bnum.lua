@@ -31,6 +31,9 @@ local NAN_SIGN = -2
 local DOMINANCE = 16
 local LOG10_E = 0.4342944819032518
 local LB_SCALE = 4503599627370496
+local MAX_SAFE_INTEGER = 9007199254740991
+local MAX_SAFE_LOG10 = 15.954589770191003
+local LOG10_2 = 0.3010299956639812
 
 local firstset = {"", "U", "D", "T", "Qd", "Qn", "Sx", "Sp", "Oc", "No"}
 local second = {"", "De", "Vt", "Tg", "qg", "Qg", "sg", "Sg", "Og", "Ng"}
@@ -57,7 +60,7 @@ bwritei8(NEG_INF, SIGN_OFFSET, -1)
 bwritef64(NEG_INF, LOG_OFFSET, huge)
 
 local module = {
-	VERSION = "1.1.0",
+	VERSION = "1.2",
 	STORAGE_VERSION = 1,
 	SIZE = SIZE,
 }
@@ -268,10 +271,73 @@ end
 
 local suffixExactMantissa = {"1", "10", "100"}
 
-
 local function roundedNumber(n: number, digits: number): number
 	local p = 10 ^ digits
 	return floor(n * p + 0.5) / p
+end
+
+local function suffixHundredthsText(value100: number): string
+	local whole = value100 // 100
+	local frac = value100 - whole * 100
+
+	if frac <= 0 then
+		return tostring(whole)
+	end
+
+	if frac % 10 == 0 then
+		return tostring(whole) .. "." .. tostring(frac // 10)
+	end
+
+	if frac < 10 then
+		return tostring(whole) .. ".0" .. tostring(frac)
+	end
+
+	return tostring(whole) .. "." .. tostring(frac)
+end
+
+local function suffixTruncated100(n: number): number
+	return floor(n * 100 + 1e-10)
+end
+
+local function compactExponentText(exponent: number): string
+	if exponent < 1000 then
+		return tostring(floor(exponent))
+	end
+
+	local decimalExponent = floor(log10(exponent))
+	local group = decimalExponent // 3
+	local suffix = suffixCache[group]
+
+	if suffix == nil then
+		return tostring(floor(exponent))
+	end
+
+	local scaled = exponent / (10 ^ (group * 3))
+	local value100 = suffixTruncated100(scaled)
+	return suffixHundredthsText(value100) .. suffix
+end
+
+local function pow10MinusOne(logValue: number): number
+	local x = logValue * 2.302585092994046
+	if abs(x) < 1e-5 then
+		return x + 0.5 * x * x + x * x * x / 6
+	end
+	return expm(x) - 1
+end
+
+local function log10OnePlusPow10(logValue: number): number
+	if logValue > DOMINANCE then
+		return logValue
+	end
+
+	local x = 10 ^ logValue
+	if x == 0 then
+		return 0
+	end
+	if x < 1e-8 then
+		return (x - 0.5 * x * x) * LOG10_E
+	end
+	return log10(1 + x)
 end
 
 function module.ensure(val: any): buffer
@@ -439,6 +505,7 @@ function module.pow(val1: buffer, val2: buffer): buffer
 	local b = val2
 	local s1 = breadi8(a, SIGN_OFFSET)
 	local s2 = breadi8(b, SIGN_OFFSET)
+
 	if s1 == NAN_SIGN or s2 == NAN_SIGN then
 		return setRaw(a, NAN_SIGN, 0)
 	end
@@ -454,26 +521,40 @@ function module.pow(val1: buffer, val2: buffer): buffer
 
 	local l1 = breadf64(a, LOG_OFFSET)
 	local l2 = breadf64(b, LOG_OFFSET)
-	if l1 == 0 then
-		return setRaw(a, 1, 0)
-	end
 	local power = s2 * 10 ^ l2
+
+	if power ~= power then
+		return setRaw(a, NAN_SIGN, 0)
+	end
+
 	local outSign = 1
 	if s1 < 0 then
-		if power ~= power or power == huge or power == -huge then
+		if power == huge or power == -huge then
 			return setRaw(a, NAN_SIGN, 0)
 		end
+
 		local nearest = round(power)
 		if abs(power - nearest) > 1e-10 then
 			return setRaw(a, NAN_SIGN, 0)
 		end
+
 		if nearest % 2 ~= 0 then
 			outSign = -1
 		end
 	end
+
+	if l1 == 0 then
+		return setRaw(a, outSign, 0)
+	end
+
 	local resultLog = l1 * power
-	if resultLog ~= resultLog then return setRaw(a, NAN_SIGN, 0) end
-	if resultLog == -huge then return setRaw(a, 0, 0) end
+	if resultLog ~= resultLog then
+		return setRaw(a, NAN_SIGN, 0)
+	end
+	if resultLog == -huge then
+		return setRaw(a, 0, 0)
+	end
+
 	return setRaw(a, outSign, resultLog)
 end
 
@@ -802,6 +883,118 @@ function module.root(val1: buffer, val2: buffer): buffer
 	return setRaw(a, outSign, breadf64(a, LOG_OFFSET) / degree)
 end
 
+function module.toNumber(val: buffer): number
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN then return 0 / 0 end
+	if s == 0 then return 0 end
+
+	local l = breadf64(val, LOG_OFFSET)
+	if l == huge or l > 308.25471555991675 then
+		return if s < 0 then -huge else huge
+	end
+	if l < -324 then
+		return 0
+	end
+	return s * 10 ^ l
+end
+
+function module.isFloat(val: buffer): boolean
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN then return false end
+	if s == 0 then return true end
+	local l = breadf64(val, LOG_OFFSET)
+	return l ~= huge and l <= 308.25471555991675
+end
+
+function module.isFinite(val: buffer): boolean
+	local s = breadi8(val, SIGN_OFFSET)
+	return s ~= NAN_SIGN and breadf64(val, LOG_OFFSET) ~= huge
+end
+
+function module.neg(val: buffer): buffer
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN or s == 0 then
+		return val
+	end
+	bwritei8(val, SIGN_OFFSET, -s)
+	return val
+end
+
+function module.recip(val: buffer): buffer
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN then
+		return val
+	end
+	if s == 0 then
+		return setRaw(val, 1, huge)
+	end
+
+	local l = breadf64(val, LOG_OFFSET)
+	if l == huge then
+		return setRaw(val, 0, 0)
+	end
+	return setRaw(val, s, -l)
+end
+
+function module.cbrt(val: buffer): buffer
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN or s == 0 then
+		return val
+	end
+	return setRaw(val, s, breadf64(val, LOG_OFFSET) / 3)
+end
+
+function module.powf(val: buffer, power: number): buffer
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN or power ~= power then
+		return setRaw(val, NAN_SIGN, 0)
+	end
+	if power == 0 then
+		return setRaw(val, 1, 0)
+	end
+	if s == 0 then
+		if power < 0 then return setRaw(val, 1, huge) end
+		return val
+	end
+
+	local outSign = 1
+	if s < 0 then
+		if power == huge or power == -huge then
+			return setRaw(val, NAN_SIGN, 0)
+		end
+		local nearest = round(power)
+		if abs(power - nearest) > 1e-10 then
+			return setRaw(val, NAN_SIGN, 0)
+		end
+		if nearest % 2 ~= 0 then
+			outSign = -1
+		end
+	end
+
+	local resultLog = breadf64(val, LOG_OFFSET) * power
+	if resultLog ~= resultLog then return setRaw(val, NAN_SIGN, 0) end
+	if resultLog == -huge then return setRaw(val, 0, 0) end
+	return setRaw(val, outSign, resultLog)
+end
+
+function module.log2(val: buffer): buffer
+	local s = breadi8(val, SIGN_OFFSET)
+	if s <= 0 then
+		return setRaw(val, NAN_SIGN, 0)
+	end
+
+	local l = breadf64(val, LOG_OFFSET)
+	if l == 0 then
+		return setRaw(val, 0, 0)
+	end
+	if l == huge then
+		return setRaw(val, 1, huge)
+	end
+
+	local result = l / LOG10_2
+	return setRaw(val, signm(result), log10(abs(result)))
+end
+
 function module.toSuffix(val: buffer): string
 	local s = breadi8(val, SIGN_OFFSET)
 	local l = breadf64(val, LOG_OFFSET)
@@ -810,84 +1003,87 @@ function module.toSuffix(val: buffer): string
 	if s == 0 then return "0" end
 	if l == huge then return if s < 0 then "-Inf" else "Inf" end
 
+	local prefix = if s < 0 then "-" else ""
+
 	if l >= 3 and l < 3000 then
 		local whole = floor(l)
 		local k = whole // 3
-		local body
 
 		if l == whole then
-			body = suffixExactMantissa[whole % 3 + 1] .. suffixCache[k]
-		else
-			local scaled = floor(10 ^ (l - k * 3) * 100 + 0.5) * 0.01
-			if scaled >= 1000 then
-				k += 1
-				if k >= 1000 then
-					body = "1e" .. tostring(k * 3)
-				else
-					body = "1" .. suffixCache[k]
-				end
-			else
-				body = tostring(scaled) .. suffixCache[k]
-			end
+			return prefix .. suffixExactMantissa[whole % 3 + 1] .. suffixCache[k]
 		end
 
-		return if s < 0 then "-" .. body else body
+		local value100 = suffixTruncated100(10 ^ (l - k * 3))
+		return prefix .. suffixHundredthsText(value100) .. suffixCache[k]
 	end
 
 	if l >= 3000 then
 		local exponent = floor(l)
-		local mantissa
+
 		if l == exponent then
-			mantissa = "1"
-		else
-			local m = floor(10 ^ (l - exponent) * 100 + 0.5) * 0.01
-			if m >= 10 then
-				m = 1
-				exponent += 1
-			end
-			mantissa = tostring(m)
+			return prefix .. "1e" .. tostring(exponent)
 		end
-		local body = mantissa .. "e" .. tostring(exponent)
-		return if s < 0 then "-" .. body else body
+
+		local value100 = suffixTruncated100(10 ^ (l - exponent))
+		return prefix .. suffixHundredthsText(value100) .. "e" .. tostring(exponent)
+	end
+
+	if l >= -2 then
+		local value100 = suffixTruncated100(10 ^ l)
+		if value100 == 0 then return "0" end
+		return prefix .. suffixHundredthsText(value100)
 	end
 
 	if l >= -3 then
-		return tostring(round(s * 10 ^ l * 100) * 0.01)
+		local value1000 = floor(10 ^ l * 1000 + 1e-10)
+		if value1000 <= 0 then return "0" end
+		return prefix .. tostring(value1000 / 1000)
 	end
 
 	if l > -3000 then
 		local inv = -l
 		local whole = floor(inv)
 		local k = whole // 3
-		local body
 
 		if inv == whole then
-			body = "1/" .. suffixExactMantissa[whole % 3 + 1] .. suffixCache[k]
-		else
-			local scaled = floor(10 ^ (inv - k * 3) * 100 + 0.5) * 0.01
-			if scaled >= 1000 then
-				k += 1
-				if k >= 1000 then
-					body = "1e-" .. tostring(k * 3)
-				else
-					body = "1/1" .. suffixCache[k]
-				end
-			else
-				body = "1/" .. tostring(scaled) .. suffixCache[k]
-			end
+			return prefix .. "1/" .. suffixExactMantissa[whole % 3 + 1] .. suffixCache[k]
 		end
 
-		return if s < 0 then "-" .. body else body
+		local value100 = suffixTruncated100(10 ^ (inv - k * 3))
+		return prefix .. "1/" .. suffixHundredthsText(value100) .. suffixCache[k]
 	end
 
 	local exponent = floor(l)
-	local mantissa = floor(10 ^ (l - exponent) * 100 + 0.5) * 0.01
-	if mantissa >= 10 then
-		mantissa = 1
-		exponent += 1
+	local value100 = suffixTruncated100(10 ^ (l - exponent))
+	return prefix .. suffixHundredthsText(value100) .. "e" .. tostring(exponent)
+end
+
+function module.toESuffix(val: buffer, switchAt: number?): string
+	local s = breadi8(val, SIGN_OFFSET)
+	local l = breadf64(val, LOG_OFFSET)
+
+	if s == NAN_SIGN then return "NaN" end
+	if s == 0 then return "0" end
+	if l == huge then return if s < 0 then "-Inf" else "Inf" end
+
+	local threshold = switchAt or 1000
+	if threshold ~= threshold then threshold = 1000 end
+	if threshold < 3 then threshold = 3 end
+
+	if l < threshold then
+		return module.toSuffix(val)
 	end
-	local body = tostring(mantissa) .. "e" .. tostring(exponent)
-	return if s < 0 then "-" .. body else body
+
+	local prefix = if s < 0 then "-" else ""
+	local exponent = floor(l)
+	local mantissa100 = suffixTruncated100(10 ^ (l - exponent))
+	local exponentText = compactExponentText(exponent)
+
+	if mantissa100 == 100 then
+		return prefix .. "E" .. exponentText
+	end
+
+	return prefix .. suffixHundredthsText(mantissa100) .. "E" .. exponentText
 end
 
 function module.format(val: buffer, digits: number?, hyperAt: number?): string
@@ -899,8 +1095,7 @@ function module.format(val: buffer, digits: number?, hyperAt: number?): string
 	if l == huge then return if s < 0 then "-Inf" else "Inf" end
 
 	local d = digits
-
-	-- Default format is the hot path. Keep it almost as lean as toSuffix().
+	
 	if (d == nil or d == 2) and hyperAt == nil then
 		if l >= 6 and l < 3000 then
 			local whole = floor(l)
@@ -1058,42 +1253,372 @@ end
 
 module.toString = module.toStr
 
-function module.maxBuy(val1: buffer, val2: buffer, multi: buffer): (number, buffer)
-	local funds = val1
-	local cost = val2
-	local multiplier = multi
+local function geometricTotalFromCount(
+	costLog: number,
+	multiplierLog: number,
+	multiplierMinusOneLog: number,
+	amount: number
+): buffer
+	if amount <= 0 then
+		return cloneRaw(ZERO)
+	end
+
+	if multiplierLog == 0 then
+		return makeRaw(1, costLog + log10(amount))
+	end
+
+	local mpLog = amount * multiplierLog
+	if mpLog == huge then
+		return cloneRaw(INF)
+	end
+
+	local mpMinusOneLog
+	if mpLog > DOMINANCE then
+		mpMinusOneLog = mpLog
+	else
+		local v = pow10MinusOne(mpLog)
+		if v <= 0 then
+			return cloneRaw(ZERO)
+		end
+		mpMinusOneLog = log10(v)
+	end
+
+	return makeRaw(1, costLog + mpMinusOneLog - multiplierMinusOneLog)
+end
+
+local function maxBuyCore(funds: buffer, cost: buffer, multiplier: buffer): (number, number, buffer)
 	local sf = breadi8(funds, SIGN_OFFSET)
 	local sc = breadi8(cost, SIGN_OFFSET)
 	local sm = breadi8(multiplier, SIGN_OFFSET)
-	if sf <= 0 or sc <= 0 or sm <= 0 then
-		return 0, setRaw(funds, 0, 0)
+
+	if sf == NAN_SIGN or sc == NAN_SIGN or sm == NAN_SIGN then
+		return 0, -huge, cloneRaw(NAN)
 	end
+	if sf <= 0 then
+		return 0, -huge, cloneRaw(ZERO)
+	end
+	if sc <= 0 or sm <= 0 then
+		return 0, -huge, cloneRaw(NAN)
+	end
+	if cmpRaw(funds, cost) < 0 then
+		return 0, -huge, cloneRaw(ZERO)
+	end
+
 	local lf = breadf64(funds, LOG_OFFSET)
 	local lc = breadf64(cost, LOG_OFFSET)
 	local lm = breadf64(multiplier, LOG_OFFSET)
-	if cmpRaw(funds, cost) < 0 then
-		return 0, setRaw(funds, 0, 0)
+	if lm == huge then
+		return 1, 0, cloneRaw(cost)
 	end
-	if abs(lm) < 1e-15 then
+	if lm == 0 then
 		local ratioLog = lf - lc
-		if ratioLog >= 15 then
-			return floor(10 ^ 15), cloneRaw(funds)
+		if ratioLog < 0 then
+			return 0, -huge, cloneRaw(ZERO)
 		end
-		local count = floor(10 ^ ratioLog)
-		if count <= 0 then return 0, setRaw(funds, 0, 0) end
-		return count, makeRaw(1, lc + log10(count))
+
+		if ratioLog <= MAX_SAFE_LOG10 then
+			local amount = floor(10 ^ ratioLog + 1e-9)
+			if amount <= 0 then
+				return 0, -huge, cloneRaw(ZERO)
+			end
+
+			local total = makeRaw(1, lc + log10(amount))
+			while amount > 0 and cmpRaw(total, funds) > 0 do
+				amount -= 1
+				if amount <= 0 then
+					return 0, -huge, cloneRaw(ZERO)
+				end
+				total = makeRaw(1, lc + log10(amount))
+			end
+
+			local nextAmount = amount + 1
+			if nextAmount <= MAX_SAFE_INTEGER then
+				local nextTotal = makeRaw(1, lc + log10(nextAmount))
+				if cmpRaw(nextTotal, funds) <= 0 then
+					amount = nextAmount
+					total = nextTotal
+				end
+			end
+
+			return amount, log10(amount), total
+		end
+
+		local amount = if ratioLog > 308.25471555991675 then huge else floor(10 ^ ratioLog)
+		return amount, ratioLog, cloneRaw(funds)
+	end
+	
+	if lm < 0 then
+		return 0, -huge, cloneRaw(NAN)
+	end
+
+	local mMinusOne = pow10MinusOne(lm)
+	if mMinusOne <= 0 or mMinusOne ~= mMinusOne then
+		return 0, -huge, cloneRaw(NAN)
+	end
+
+	local mMinusOneLog = log10(mMinusOne)
+	local xLog = lf + mMinusOneLog - lc
+	local onePlusXLog = log10OnePlusPow10(xLog)
+
+	if onePlusXLog ~= onePlusXLog or onePlusXLog <= 0 then
+		return 0, -huge, cloneRaw(ZERO)
+	end
+
+	local estimated = onePlusXLog / lm
+	if estimated ~= estimated or estimated < 1 then
+		return 0, -huge, cloneRaw(ZERO)
+	end
+
+	if estimated <= MAX_SAFE_INTEGER then
+		local amount = floor(estimated)
+		if amount <= 0 then
+			return 0, -huge, cloneRaw(ZERO)
+		end
+
+		local total = geometricTotalFromCount(lc, lm, mMinusOneLog, amount)
+		
+		while amount > 0 and cmpRaw(total, funds) > 0 do
+			amount -= 1
+			if amount <= 0 then
+				return 0, -huge, cloneRaw(ZERO)
+			end
+			total = geometricTotalFromCount(lc, lm, mMinusOneLog, amount)
+		end
+
+		local nextAmount = amount + 1
+		if nextAmount <= MAX_SAFE_INTEGER then
+			local nextTotal = geometricTotalFromCount(lc, lm, mMinusOneLog, nextAmount)
+			if cmpRaw(nextTotal, funds) <= 0 then
+				amount = nextAmount
+				total = nextTotal
+			end
+		end
+
+		return amount, log10(amount), total
+	end
+
+	local amount = if estimated == huge then huge else estimated
+	local amountLog = log10(onePlusXLog) - log10(lm)
+	local total = if lf == huge then cloneRaw(INF) else cloneRaw(funds)
+	return amount, amountLog, total
+end
+
+function module.maxBuy(val1: buffer, val2: buffer, multi: buffer): (number, buffer)
+	local amount, _, totalCost = maxBuyCore(val1, val2, multi)
+	return amount, totalCost
+end
+
+function module.maxBuyBnum(val1: buffer, val2: buffer, multi: buffer): (buffer, buffer)
+	local amount, amountLog, totalCost = maxBuyCore(val1, val2, multi)
+	if amount <= 0 then
+		return cloneRaw(ZERO), totalCost
+	end
+	if amount ~= huge and amount <= MAX_SAFE_INTEGER then
+		return fromFiniteNumber(amount), totalCost
+	end
+	return makeRaw(1, amountLog), totalCost
+end
+
+function module.canAfford(funds: buffer, cost: buffer): boolean
+	return cmpRaw(funds, cost) >= 0
+end
+
+function module.bulkCost(cost: buffer, multiplier: buffer, amount: buffer): buffer
+	local sc = breadi8(cost, SIGN_OFFSET)
+	local sm = breadi8(multiplier, SIGN_OFFSET)
+	local sa = breadi8(amount, SIGN_OFFSET)
+
+	if sc == NAN_SIGN or sm == NAN_SIGN or sa == NAN_SIGN then
+		return cloneRaw(NAN)
+	end
+	if sa == 0 then
+		return cloneRaw(ZERO)
+	end
+	if sc <= 0 or sm <= 0 or sa < 0 then
+		return cloneRaw(NAN)
+	end
+
+	local lc = breadf64(cost, LOG_OFFSET)
+	local lm = breadf64(multiplier, LOG_OFFSET)
+	local la = breadf64(amount, LOG_OFFSET)
+
+	if lm == 0 then
+		return makeRaw(1, lc + la)
 	end
 	if lm < 0 then
-		return 0, setRaw(funds, NAN_SIGN, 0)
+		return cloneRaw(NAN)
 	end
-	local mMinusOneLog = lm + log10(1 - 10 ^ (-lm))
-	local xLog = lf + mMinusOneLog - lc
-	local onePlusXLog = if xLog > 16 then xLog else log10(1 + 10 ^ xLog)
-	local totalAmount = floor(onePlusXLog / lm)
-	if totalAmount <= 0 then return 0, setRaw(funds, 0, 0) end
-	local mpLog = totalAmount * lm
-	local mpMinusOneLog = if mpLog > 16 then mpLog else log10(10 ^ mpLog - 1)
-	return totalAmount, makeRaw(1, lc + mpMinusOneLog - mMinusOneLog)
+
+	local amountValue
+	if la > 308.25471555991675 then
+		amountValue = huge
+	else
+		amountValue = 10 ^ la
+	end
+
+	local mpLog
+	if amountValue == huge then
+		mpLog = huge
+	else
+		mpLog = amountValue * lm
+	end
+
+	if mpLog == huge then
+		return cloneRaw(INF)
+	end
+
+	local mMinusOne = pow10MinusOne(lm)
+	if mMinusOne <= 0 or mMinusOne ~= mMinusOne then
+		return cloneRaw(NAN)
+	end
+
+	local mpMinusOneLog
+	if mpLog > DOMINANCE then
+		mpMinusOneLog = mpLog
+	else
+		local v = pow10MinusOne(mpLog)
+		if v <= 0 then return cloneRaw(ZERO) end
+		mpMinusOneLog = log10(v)
+	end
+
+	return makeRaw(1, lc + mpMinusOneLog - log10(mMinusOne))
+end
+
+function module.bulkCostNumber(cost: buffer, multiplier: buffer, amount: number): buffer
+	if amount ~= amount or amount < 0 then
+		return cloneRaw(NAN)
+	end
+	if amount == huge then
+		return cloneRaw(INF)
+	end
+
+	amount = floor(amount)
+	if amount <= 0 then
+		return cloneRaw(ZERO)
+	end
+
+	return module.bulkCost(cost, multiplier, fromFiniteNumber(amount))
+end
+
+function module.maxBuyLimited(
+	funds: buffer,
+	cost: buffer,
+	multiplier: buffer,
+	limit: number
+): (number, buffer)
+	if limit ~= limit or limit <= 0 then
+		return 0, cloneRaw(ZERO)
+	end
+
+	limit = floor(limit)
+	if limit <= 0 then
+		return 0, cloneRaw(ZERO)
+	end
+
+	local affordable, fullCost = module.maxBuy(funds, cost, multiplier)
+	if affordable <= 0 then
+		return 0, fullCost
+	end
+
+	if affordable <= limit then
+		return affordable, fullCost
+	end
+
+	return limit, module.bulkCostNumber(cost, multiplier, limit)
+end
+
+function module.nextCost(cost: buffer, multiplier: buffer, owned: buffer): buffer
+	local sc = breadi8(cost, SIGN_OFFSET)
+	local sm = breadi8(multiplier, SIGN_OFFSET)
+	local so = breadi8(owned, SIGN_OFFSET)
+
+	if sc == NAN_SIGN or sm == NAN_SIGN or so == NAN_SIGN then
+		return cloneRaw(NAN)
+	end
+	if sc <= 0 or sm <= 0 or so < 0 then
+		return cloneRaw(NAN)
+	end
+	if so == 0 then
+		return cloneRaw(cost)
+	end
+
+	local lc = breadf64(cost, LOG_OFFSET)
+	local lm = breadf64(multiplier, LOG_OFFSET)
+	if lm == 0 then
+		return cloneRaw(cost)
+	end
+
+	local lo = breadf64(owned, LOG_OFFSET)
+	if lo > 308.25471555991675 then
+		if lm > 0 then return cloneRaw(INF) end
+		return cloneRaw(ZERO)
+	end
+
+	local ownedValue = 10 ^ lo
+	local resultLog = lc + ownedValue * lm
+	if resultLog == huge then return cloneRaw(INF) end
+	if resultLog == -huge then return cloneRaw(ZERO) end
+	return makeRaw(1, resultLog)
+end
+
+function module.nextCostNumber(cost: buffer, multiplier: buffer, owned: number): buffer
+	if owned ~= owned or owned < 0 then
+		return cloneRaw(NAN)
+	end
+	if owned == 0 then
+		return cloneRaw(cost)
+	end
+
+	local sc = breadi8(cost, SIGN_OFFSET)
+	local sm = breadi8(multiplier, SIGN_OFFSET)
+	if sc <= 0 or sm <= 0 then
+		return cloneRaw(NAN)
+	end
+
+	local lm = breadf64(multiplier, LOG_OFFSET)
+	if lm == 0 then return cloneRaw(cost) end
+	if owned == huge then
+		return if lm > 0 then cloneRaw(INF) else cloneRaw(ZERO)
+	end
+
+	local resultLog = breadf64(cost, LOG_OFFSET) + owned * lm
+	if resultLog == huge then return cloneRaw(INF) end
+	if resultLog == -huge then return cloneRaw(ZERO) end
+	return makeRaw(1, resultLog)
+end
+
+function module.buyMax(funds: buffer, cost: buffer, multiplier: buffer): (number, buffer, buffer)
+	local amount, totalCost = module.maxBuy(funds, cost, multiplier)
+	if amount <= 0 then
+		return amount, totalCost, cloneRaw(funds)
+	end
+
+	local remaining = cloneRaw(funds)
+	subRaw(remaining, remaining, totalCost)
+	if breadi8(remaining, SIGN_OFFSET) < 0 then
+		setRaw(remaining, 0, 0)
+	end
+	return amount, totalCost, remaining
+end
+
+function module.buyMaxLimited(
+	funds: buffer,
+	cost: buffer,
+	multiplier: buffer,
+	limit: number
+): (number, buffer, buffer)
+	local amount, totalCost = module.maxBuyLimited(funds, cost, multiplier, limit)
+	if amount <= 0 then
+		return amount, totalCost, cloneRaw(funds)
+	end
+
+	local remaining = cloneRaw(funds)
+	subRaw(remaining, remaining, totalCost)
+	if breadi8(remaining, SIGN_OFFSET) < 0 then
+		setRaw(remaining, 0, 0)
+	end
+
+	return amount, totalCost, remaining
 end
 
 function module.percent(val1: buffer, val2: buffer): string
@@ -1122,6 +1647,76 @@ local function expm1(x: number): number
 		return x + 0.5 * x * x
 	end
 	return expm(x) - 1
+end
+
+
+function module.linear(base: buffer, increment: buffer, level: buffer): buffer
+	local product = bcreate(SIZE)
+	mulRaw(product, increment, level)
+	return addRaw(product, base, product)
+end
+
+function module.linearNumber(base: buffer, increment: buffer, level: number): buffer
+	if level ~= level then
+		return cloneRaw(NAN)
+	end
+	if level == 0 then
+		return cloneRaw(base)
+	end
+	local product = bcreate(SIZE)
+	if level == huge or level == -huge then
+		setRaw(product, if level > 0 then breadi8(increment, SIGN_OFFSET) else -breadi8(increment, SIGN_OFFSET), huge)
+	else
+		local si = breadi8(increment, SIGN_OFFSET)
+		if si == NAN_SIGN then return cloneRaw(NAN) end
+		if si == 0 then return cloneRaw(base) end
+		setRaw(product, si * signm(level), breadf64(increment, LOG_OFFSET) + log10(abs(level)))
+	end
+	return addRaw(product, base, product)
+end
+
+function module.softCap(val: buffer, cap: buffer, power: buffer): buffer
+	if cmpRaw(val, cap) <= 0 then
+		return val
+	end
+
+	local sv = breadi8(val, SIGN_OFFSET)
+	local sc = breadi8(cap, SIGN_OFFSET)
+	local sp = breadi8(power, SIGN_OFFSET)
+	if sv <= 0 or sc <= 0 or sp == NAN_SIGN then
+		return cloneRaw(NAN)
+	end
+	if sp == 0 then
+		return cloneRaw(cap)
+	end
+
+	local lp = breadf64(power, LOG_OFFSET)
+	if lp > 308.25471555991675 then
+		return if sp > 0 then cloneRaw(INF) else cloneRaw(cap)
+	end
+
+	local p = sp * 10 ^ lp
+	local resultLog = breadf64(cap, LOG_OFFSET)
+		+ (breadf64(val, LOG_OFFSET) - breadf64(cap, LOG_OFFSET)) * p
+
+	if resultLog == huge then return cloneRaw(INF) end
+	if resultLog == -huge then return cloneRaw(ZERO) end
+	return makeRaw(1, resultLog)
+end
+
+function module.milestoneCount(val: buffer, step: buffer): buffer
+	local out = cloneRaw(val)
+	return module.intdiv(out, step)
+end
+
+function module.milestone(val: buffer, step: buffer, bonus: buffer): buffer
+	if breadi8(step, SIGN_OFFSET) <= 0 then
+		return cloneRaw(NAN)
+	end
+
+	local count = module.milestoneCount(val, step)
+	local scaled = mulRaw(count, count, bonus)
+	return addRaw(bcreate(SIZE), ONE, scaled)
 end
 
 function module.scaleCurve(val1: buffer, base: buffer, exponent: buffer, mode: ScaleMode): buffer
@@ -1322,8 +1917,6 @@ function module.eta(curr: buffer, goal: buffer, rate: buffer): buffer
 	return setRaw(c, 1, diffLog - breadf64(r, LOG_OFFSET))
 end
 
-
-
 function module.sign(val: buffer): number
 	return breadi8(val, SIGN_OFFSET)
 end
@@ -1352,7 +1945,7 @@ function module.isBnum(val: any): boolean
 	return type(val) == "buffer" and buffer.len(val) >= SIZE
 end
 
--- v1.1 hot-path rule:
+-- v1.2 hot-path rule:
 -- Core math functions accept Bnum buffers directly and never call ensure().
 -- Use module.ensure()/fromNumber()/fromString() at API boundaries only.
 module.compat = {}
@@ -1380,6 +1973,37 @@ function module.compat.eq(a: any, b: any): boolean
 end
 function module.compat.format(a: any, digits: number?, hyperAt: number?): string
 	return module.format(module.ensure(a), digits, hyperAt)
+end
+function module.compat.toESuffix(a: any, switchAt: number?): string
+	return module.toESuffix(module.ensure(a), switchAt)
+end
+
+function module.compat.maxBuy(funds: any, cost: any, multiplier: any): (number, buffer)
+	return module.maxBuy(module.ensure(funds), module.ensure(cost), module.ensure(multiplier))
+end
+function module.compat.maxBuyBnum(funds: any, cost: any, multiplier: any): (buffer, buffer)
+	return module.maxBuyBnum(module.ensure(funds), module.ensure(cost), module.ensure(multiplier))
+end
+function module.compat.maxBuyLimited(funds: any, cost: any, multiplier: any, limit: number): (number, buffer)
+	return module.maxBuyLimited(module.ensure(funds), module.ensure(cost), module.ensure(multiplier), limit)
+end
+function module.compat.buyMaxLimited(funds: any, cost: any, multiplier: any, limit: number): (number, buffer, buffer)
+	return module.buyMaxLimited(module.ensure(funds), module.ensure(cost), module.ensure(multiplier), limit)
+end
+function module.compat.bulkCost(cost: any, multiplier: any, amount: any): buffer
+	return module.bulkCost(module.ensure(cost), module.ensure(multiplier), module.ensure(amount))
+end
+function module.compat.nextCost(cost: any, multiplier: any, owned: any): buffer
+	return module.nextCost(module.ensure(cost), module.ensure(multiplier), module.ensure(owned))
+end
+function module.compat.linear(base: any, increment: any, level: any): buffer
+	return module.linear(module.ensure(base), module.ensure(increment), module.ensure(level))
+end
+function module.compat.softCap(val: any, cap: any, power: any): buffer
+	return module.softCap(module.ensure(val), module.ensure(cap), module.ensure(power))
+end
+function module.compat.milestone(val: any, step: any, bonus: any): buffer
+	return module.milestone(module.ensure(val), module.ensure(step), module.ensure(bonus))
 end
 
 function module.benchmark(iterations: number?): {[string]: number}
@@ -1418,5 +2042,13 @@ function module.benchmark(iterations: number?): {[string]: number}
 	if sink == huge then result._sink = sink end
 	return result
 end
+
+module.maxBuyBig = module.maxBuyBnum
+module.maxBuyCapped = module.maxBuyLimited
+module.buyMaxCapped = module.buyMaxLimited
+module.toExponentSuffix = module.toESuffix
+module.toExtendedSuffix = module.toESuffix
+module.totalCost = module.bulkCost
+module.costAt = module.nextCost
 
 return module
