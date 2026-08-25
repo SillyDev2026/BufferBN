@@ -960,6 +960,7 @@ local Value = Bnum.fromNumber(2)
 local Result = Bnum.exp(Value)
 
 print(Bnum.format(Result))
+ 7.39
 ```
 
 ---
