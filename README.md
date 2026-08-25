@@ -1,11 +1,11 @@
-# Bnum v1.2.0
+# Bnum v1.2.1
 
 A high-performance big-number library for Roblox/Luau built around a compact **12-byte `buffer` representation**.
 
 Bnum is designed for simulator, incremental, clicker, economy, leaderboard, and other Roblox systems that need values far beyond normal floating-point display ranges without turning every math operation into string arithmetic.
 
 ```text
-Version:         1.2.0
+Version:         1.2.1
 Storage Version: 1
 Buffer Size:     12 bytes
 Representation:  sign × 10^logMagnitude
@@ -17,10 +17,10 @@ Representation:  sign × 10^logMagnitude
 
 - 12-byte buffer-backed numbers
 - Extremely large and tiny values
-- Buffer-native hot-path API
+- Buffer-native hot-path API with flattened core math paths
 - Allocating, reusable-buffer, and in-place arithmetic
 - Fast comparisons
-- Scientific parsing and serialization
+- Fast scientific parsing and serialization, including a dedicated `1eN` path
 - Compact suffix notation
 - New exponent-suffix notation
 - Geometric Max Buy
@@ -31,6 +31,8 @@ Representation:  sign × 10^logMagnitude
 - NaN and infinity support
 - Compatibility layer for numbers and strings
 - Built-in microbenchmark helper
+- Non-mutating normal math plus explicit in-place `*eq` math
+- `isValid()` buffer validation helper
 - `--!optimize 2`
 - `--!native`
 
@@ -41,7 +43,7 @@ Representation:  sign × 10^logMagnitude
 1. [Installation](#installation)
 2. [Quick Start](#quick-start)
 3. [How Bnum Stores Numbers](#how-bnum-stores-numbers)
-4. [The v1.2 Buffer-Native Rule](#the-v12-buffer-native-rule)
+4. [The v1.2.1 Buffer-Native Rule](#the-v129-buffer-native-rule)
 5. [Mutation Rules](#mutation-rules)
 6. [Creating Bnums](#creating-bnums)
 7. [Arithmetic](#arithmetic)
@@ -66,7 +68,7 @@ Representation:  sign × 10^logMagnitude
 26. [Performance Guidelines](#performance-guidelines)
 27. [Built-In Benchmark](#built-in-benchmark)
 28. [API Reference](#api-reference)
-29. [v1.2.0 Changes](#v126-changes)
+29. [v1.2.1 Changes](#v129-changes)
 30. [Recommended Project Pattern](#recommended-project-pattern)
 
 ---
@@ -91,7 +93,7 @@ Check the loaded version:
 
 ```lua
 print(Bnum.VERSION)
--- 1.2.0
+-- 1.2.1
 ```
 
 Bnum itself uses:
@@ -185,7 +187,7 @@ NaN
 
 ---
 
-# The v1.2 Buffer-Native Rule
+# The v1.2.1 Buffer-Native Rule
 
 The core v1.2 API expects **Bnum buffers**.
 
@@ -229,66 +231,35 @@ The compatibility API is still available when convenience matters more than raw 
 
 # Mutation Rules
 
-This is one of the most important parts of Bnum.
+Bnum v1.2.1 separates normal math from explicit in-place math.
 
-Some APIs allocate a new result.
+The regular math API returns a **new 12-byte Bnum buffer** and leaves its inputs unchanged.
 
-Other APIs intentionally mutate the first Bnum argument to reduce allocations.
-
-## Allocating example
-
-`add()` returns a new buffer:
+## Normal allocating math
 
 ```lua
 local A = Bnum.fromNumber(100)
 local B = Bnum.fromNumber(50)
 
-local Result = Bnum.add(A, B)
+local Added = Bnum.add(A, B)
+local Multiplied = Bnum.mul(A, B)
 
 print(Bnum.toSuffix(A))
 -- 100
 
-print(Bnum.toSuffix(Result))
+print(Bnum.toSuffix(Added))
 -- 150
+
+print(Bnum.toSuffix(Multiplied))
+-- 5k
 ```
 
-## Mutating example
+This applies to the normal arithmetic, power, root, log, rounding, scaling, and helper APIs.
 
-`mul()` reuses the first buffer:
-
-```lua
-local Value = Bnum.fromNumber(100)
-local Multiplier = Bnum.fromNumber(2)
-
-Bnum.mul(Value, Multiplier)
-
-print(Bnum.toSuffix(Value))
--- 200
-```
-
-If you need to preserve the original:
-
-```lua
-local Original = Bnum.fromNumber(100)
-local Multiplier = Bnum.fromNumber(2)
-
-local Result = Bnum.mul(
-	Bnum.clone(Original),
-	Multiplier
-)
-
-print(Bnum.toSuffix(Original))
--- 100
-
-print(Bnum.toSuffix(Result))
--- 200
-```
-
-## Common mutating APIs
-
-Treat these as mutating their first Bnum argument:
+Examples include:
 
 ```text
+add
 sub
 subz
 mul
@@ -317,35 +288,82 @@ progress
 dynamicCost
 abs
 eta
+softCap
+clamp
 ```
 
-The explicit `*eq` functions also mutate:
+You do **not** need to clone an input just to protect it before calling these functions.
+
+## Explicit in-place math
+
+Use the `*eq` functions when you intentionally want to overwrite the first Bnum:
 
 ```text
 addeq
 subeq
 muleq
 diveq
+poweq
 ```
 
-## APIs that may return an existing input
-
-These are not guaranteed to return a fresh clone:
-
-```text
-min
-max
-clamp
-softCap
-```
-
-If ownership matters, clone the result:
+Example:
 
 ```lua
-local SafeResult = Bnum.clone(
+local Value = Bnum.fromNumber(100)
+local Multiplier = Bnum.fromNumber(2)
+
+Bnum.muleq(Value, Multiplier)
+
+print(Bnum.toSuffix(Value))
+-- 200
+```
+
+`poweq()` is the in-place counterpart to `pow()`:
+
+```lua
+local Value = Bnum.fromNumber(10)
+local Power = Bnum.fromNumber(3)
+
+Bnum.poweq(Value, Power)
+
+print(Bnum.toSuffix(Value))
+-- 1k
+```
+
+## Reusable output buffers
+
+The `*Buffer` API can write into a caller-owned output buffer:
+
+```lua
+local A = Bnum.fromNumber(100)
+local B = Bnum.fromNumber(25)
+local Out = buffer.create(Bnum.SIZE)
+
+Bnum.addBuffer(A, B, Out)
+
+print(Bnum.toSuffix(Out))
+-- 125
+```
+
+In this form, `Out` is mutated. `A` and `B` are not.
+
+## Reference-returning helpers
+
+`min()` and `max()` may return one of the supplied input buffers directly.
+
+```lua
+local Highest = Bnum.max(A, B)
+```
+
+If you need independent ownership of that result:
+
+```lua
+local SafeHighest = Bnum.clone(
 	Bnum.max(A, B)
 )
 ```
+
+`ensure(existingBnum)` also returns the same buffer because it is a coercion boundary, not a clone operation. Use `clone()` when you specifically need a separate buffer.
 
 ---
 
@@ -470,6 +488,8 @@ print(Bnum.toSuffix(Copy))
 
 # Arithmetic
 
+The normal arithmetic functions in v1.2.1 are non-mutating. Assign the returned Bnum.
+
 ## Addition
 
 ```lua
@@ -482,8 +502,6 @@ print(Bnum.toSuffix(Result))
 -- 125
 ```
 
-`add()` allocates a new result.
-
 ---
 
 ## Subtraction
@@ -492,13 +510,11 @@ print(Bnum.toSuffix(Result))
 local A = Bnum.fromNumber(100)
 local B = Bnum.fromNumber(25)
 
-Bnum.sub(A, B)
+local Result = Bnum.sub(A, B)
 
-print(Bnum.toSuffix(A))
+print(Bnum.toSuffix(Result))
 -- 75
 ```
-
-`sub()` mutates `A`.
 
 ---
 
@@ -510,9 +526,9 @@ print(Bnum.toSuffix(A))
 local Health = Bnum.fromNumber(50)
 local Damage = Bnum.fromNumber(100)
 
-Bnum.subz(Health, Damage)
+local Result = Bnum.subz(Health, Damage)
 
-print(Bnum.toSuffix(Health))
+print(Bnum.toSuffix(Result))
 -- 0
 ```
 
@@ -524,9 +540,9 @@ print(Bnum.toSuffix(Health))
 local Value = Bnum.fromNumber(100)
 local Multiplier = Bnum.fromNumber(3)
 
-Bnum.mul(Value, Multiplier)
+local Result = Bnum.mul(Value, Multiplier)
 
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 300
 ```
 
@@ -538,9 +554,9 @@ print(Bnum.toSuffix(Value))
 local Value = Bnum.fromNumber(100)
 local Divisor = Bnum.fromNumber(4)
 
-Bnum.div(Value, Divisor)
+local Result = Bnum.div(Value, Divisor)
 
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 25
 ```
 
@@ -552,9 +568,9 @@ print(Bnum.toSuffix(Value))
 local Value = Bnum.fromNumber(17)
 local Divisor = Bnum.fromNumber(5)
 
-Bnum.intdiv(Value, Divisor)
+local Result = Bnum.intdiv(Value, Divisor)
 
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 3
 ```
 
@@ -566,17 +582,19 @@ print(Bnum.toSuffix(Value))
 local Value = Bnum.fromNumber(17)
 local Divisor = Bnum.fromNumber(5)
 
-Bnum.mod(Value, Divisor)
+local Result = Bnum.mod(Value, Divisor)
 
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 2
 ```
 
 Alias:
 
 ```lua
-Bnum.imod(Value, Divisor)
+local Result = Bnum.imod(Value, Divisor)
 ```
+
+When you intentionally want mutation in a hot loop, prefer the explicit `addeq`, `subeq`, `muleq`, `diveq`, or `poweq` APIs.
 
 ---
 
@@ -642,6 +660,7 @@ addeq
 subeq
 muleq
 diveq
+poweq
 ```
 
 Example:
@@ -749,6 +768,8 @@ print(Bnum.toSuffix(Largest))
 
 # Roots, Powers, and Logs
 
+These functions return new Bnums in v1.2.1.
+
 ## `pow()`
 
 Both arguments are Bnums:
@@ -757,22 +778,22 @@ Both arguments are Bnums:
 local Base = Bnum.fromNumber(10)
 local Power = Bnum.fromNumber(6)
 
-Bnum.pow(Base, Power)
+local Result = Bnum.pow(Base, Power)
 
-print(Bnum.toSuffix(Base))
+print(Bnum.toSuffix(Result))
 -- 1m
 ```
 
-The first buffer is mutated.
+For an in-place power operation, use `poweq()`.
 
 Negative-base behavior is handled for integer exponents:
 
 ```lua
 local A = Bnum.fromNumber(-1)
 
-Bnum.pow(A, Bnum.fromNumber(3))
+local Result = Bnum.pow(A, Bnum.fromNumber(3))
 
-print(Bnum.toSuffix(A))
+print(Bnum.toSuffix(Result))
 -- -1
 ```
 
@@ -781,9 +802,9 @@ A non-real fractional power becomes NaN:
 ```lua
 local A = Bnum.fromNumber(-1)
 
-Bnum.pow(A, Bnum.fromNumber(0.5))
+local Result = Bnum.pow(A, Bnum.fromNumber(0.5))
 
-print(Bnum.isNaN(A))
+print(Bnum.isNaN(Result))
 -- true
 ```
 
@@ -795,10 +816,9 @@ Use a normal Luau number as the exponent:
 
 ```lua
 local Value = Bnum.fromNumber(9)
+local Result = Bnum.powf(Value, 0.5)
 
-Bnum.powf(Value, 0.5)
-
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 3
 ```
 
@@ -810,10 +830,9 @@ This is useful when the exponent itself does not need to be a Bnum.
 
 ```lua
 local Exponent = Bnum.fromNumber(100)
+local Result = Bnum.pow10(Exponent)
 
-Bnum.pow10(Exponent)
-
-print(Bnum.toString(Exponent))
+print(Bnum.toString(Result))
 -- 1e100
 ```
 
@@ -823,10 +842,9 @@ print(Bnum.toString(Exponent))
 
 ```lua
 local Value = Bnum.fromNumber(144)
+local Result = Bnum.sqrt(Value)
 
-Bnum.sqrt(Value)
-
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 12
 ```
 
@@ -838,10 +856,9 @@ Cube roots support negative values:
 
 ```lua
 local Value = Bnum.fromNumber(-125)
+local Result = Bnum.cbrt(Value)
 
-Bnum.cbrt(Value)
-
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- -5
 ```
 
@@ -853,9 +870,9 @@ print(Bnum.toSuffix(Value))
 local Value = Bnum.fromNumber(256)
 local Degree = Bnum.fromNumber(4)
 
-Bnum.root(Value, Degree)
+local Result = Bnum.root(Value, Degree)
 
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 4
 ```
 
@@ -863,14 +880,11 @@ print(Bnum.toSuffix(Value))
 
 ## `recip()`
 
-Reciprocal:
-
 ```lua
 local Value = Bnum.fromNumber(8)
+local Result = Bnum.recip(Value)
 
-Bnum.recip(Value)
-
-print(Bnum.format(Value, 4))
+print(Bnum.format(Result, 4))
 -- 0.125
 ```
 
@@ -878,14 +892,11 @@ print(Bnum.format(Value, 4))
 
 ## `neg()`
 
-Negate in place:
-
 ```lua
 local Value = Bnum.fromNumber(500)
+local Result = Bnum.neg(Value)
 
-Bnum.neg(Value)
-
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- -500
 ```
 
@@ -895,10 +906,9 @@ print(Bnum.toSuffix(Value))
 
 ```lua
 local Value = Bnum.fromNumber(1000)
+local Result = Bnum.log10(Value)
 
-Bnum.log10(Value)
-
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 3
 ```
 
@@ -908,10 +918,9 @@ print(Bnum.toSuffix(Value))
 
 ```lua
 local Value = Bnum.fromNumber(1024)
+local Result = Bnum.log2(Value)
 
-Bnum.log2(Value)
-
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 10
 ```
 
@@ -921,10 +930,9 @@ print(Bnum.toSuffix(Value))
 
 ```lua
 local Value = Bnum.fromNumber(10)
+local Result = Bnum.ln(Value)
 
-Bnum.ln(Value)
-
-print(Bnum.format(Value))
+print(Bnum.format(Result))
 ```
 
 `ln` is an alias of `log` when no base is supplied.
@@ -937,9 +945,9 @@ print(Bnum.format(Value))
 local Value = Bnum.fromNumber(1000)
 local Base = Bnum.fromNumber(10)
 
-Bnum.log(Value, Base)
+local Result = Bnum.log(Value, Base)
 
-print(Bnum.toSuffix(Value))
+print(Bnum.toSuffix(Result))
 -- 3
 ```
 
@@ -949,17 +957,16 @@ print(Bnum.toSuffix(Value))
 
 ```lua
 local Value = Bnum.fromNumber(2)
+local Result = Bnum.exp(Value)
 
-Bnum.exp(Value)
-
-print(Bnum.format(Value))
+print(Bnum.format(Result))
 ```
 
 ---
 
 # Formatting
 
-Bnum v1.2.0 has three main display systems:
+Bnum v1.2.1 has three main display systems:
 
 | Function | Main purpose | Decimal behavior |
 |---|---|---|
@@ -982,7 +989,7 @@ print(Bnum.toSuffix(Coins))
 -- 1.25m
 ```
 
-## v1.2.0 truncation behavior
+## Current truncation behavior
 
 `toSuffix()` does **not** round up to the next displayed hundredth.
 
@@ -1066,7 +1073,7 @@ print(Bnum.toSuffix(Tiny))
 
 # `toESuffix()`
 
-`toESuffix()` is new in v1.2.0.
+`toESuffix()` was introduced in the v1.2 line.
 
 It behaves like `toSuffix()` below a configurable decimal-exponent threshold.
 
@@ -1357,16 +1364,29 @@ isPositive
 isNegative
 isFinite
 isFloat
+isValid
 isBnum
 ```
 
 `exponent()` returns Bnum's internal base-10 logarithmic magnitude.
 
+## `isValid()`
+
+Use `isValid()` when an external or untrusted buffer needs validation before entering performance-sensitive Bnum code:
+
+```lua
+if Bnum.isValid(Value) then
+	print("Valid Bnum buffer")
+end
+```
+
+Normal hot-path math assumes it receives valid Bnum buffers. Keep validation at system boundaries rather than repeating it inside every operation.
+
 ---
 
 # Max Buy and Upgrade Systems
 
-Bnum v1.2.0 includes a geometric Max Buy system.
+Bnum v1.2.1 includes a geometric Max Buy system.
 
 It is designed for costs following:
 
@@ -1630,7 +1650,7 @@ local Total = Bnum.bulkCostNumber(
 )
 ```
 
-v1.2.0 treats purchase counts as whole upgrades.
+v1.2.1 treats purchase counts as whole upgrades.
 
 For example:
 
@@ -1662,7 +1682,7 @@ end
 
 # Limited Buy Buttons
 
-Bnum v1.2.5 introduced limited Max Buy support and v1.2.0 keeps it intact.
+Bnum v1.2.5 introduced limited Max Buy support and v1.2.1 keeps it intact.
 
 This is useful for:
 
@@ -1950,7 +1970,7 @@ local Owned = Bnum.fromNumber(25)
 local Scale = Bnum.fromNumber(1.15)
 
 local Cost = Bnum.dynamicCost(
-	Bnum.clone(BaseCost),
+	BaseCost,
 	Owned,
 	Scale,
 	"exp"
@@ -1959,9 +1979,7 @@ local Cost = Bnum.dynamicCost(
 print(Bnum.toSuffix(Cost))
 ```
 
-`dynamicCost()` mutates its first argument.
-
-Clone the base cost if you need to keep it.
+`dynamicCost()` returns a new Bnum. The input cost buffer is preserved.
 
 ---
 
@@ -1983,7 +2001,7 @@ local Base = Bnum.fromNumber(100)
 local Exponent = Bnum.fromNumber(2)
 
 local Result = Bnum.scaleCurve(
-	Bnum.clone(Value),
+	Value,
 	Base,
 	Exponent,
 	"exp"
@@ -2001,7 +2019,7 @@ local Current = Bnum.fromNumber(750)
 local Goal = Bnum.fromNumber(1000)
 
 local Progress = Bnum.progress(
-	Bnum.clone(Current),
+	Current,
 	Goal,
 	"linear"
 )
@@ -2041,7 +2059,7 @@ local Goal = Bnum.fromNumber(1000)
 local Rate = Bnum.fromNumber(50)
 
 local ETA = Bnum.eta(
-	Bnum.clone(Current),
+	Current,
 	Goal,
 	Rate
 )
@@ -2049,7 +2067,7 @@ local ETA = Bnum.eta(
 print(Bnum.toSuffix(ETA))
 ```
 
-`eta()` mutates the first argument supplied to it.
+`eta()` returns a new Bnum and preserves the supplied inputs.
 
 If the rate is not positive, the result becomes infinity.
 
@@ -2060,9 +2078,9 @@ If the rate is not positive, the result becomes infinity.
 ```lua
 local Value = Bnum.fromNumber(12.75)
 
-local Floored = Bnum.floor(Bnum.clone(Value))
-local Ceiled = Bnum.ceil(Bnum.clone(Value))
-local Rounded = Bnum.round(Bnum.clone(Value))
+local Floored = Bnum.floor(Value)
+local Ceiled = Bnum.ceil(Value)
+local Rounded = Bnum.round(Value)
 
 print(Bnum.toSuffix(Floored))
 -- 12
@@ -2397,20 +2415,57 @@ Keeping serialization at the data boundary means gameplay math remains buffer-na
 
 # Performance Guidelines
 
-For the best Bnum performance:
+Bnum v1.2.1 is designed around a simple rule: **convert at boundaries, then stay buffer-native**.
 
-1. Convert normal values once.
-2. Keep Bnum values as buffers during gameplay.
-3. Avoid `ensure()` in tight loops.
-4. Avoid the compatibility layer in hot loops.
-5. Use `addeq`, `subeq`, `muleq`, and `diveq` when mutation is intended.
-6. Reuse `addBuffer`, `subBuffer`, `mulBuffer`, and `divBuffer` output buffers when useful.
-7. Use `clone()` only when you actually need an independent value.
-8. Use direct comparisons such as `eq`, `lt`, `gt`, `lte`, and `gte`.
-9. Use `toSuffix()` for compact UI.
-10. Use `toESuffix()` when one formatter needs to cover normal and extreme values.
-11. Avoid formatting every frame unless the displayed value actually changed.
-12. Keep save/load conversion outside gameplay math loops.
+For the best performance:
+
+1. Convert normal values once with `fromNumber()` or `fromString()`.
+2. Keep Bnum values as 12-byte buffers during gameplay.
+3. Avoid `ensure()` and `compat.*` inside tight loops.
+4. Use normal `add/sub/mul/div/pow/...` when you want a fresh result.
+5. Use `addeq`, `subeq`, `muleq`, `diveq`, and `poweq` when mutation is intentional.
+6. Reuse `addBuffer`, `subBuffer`, `mulBuffer`, and `divBuffer` output buffers in allocation-sensitive loops.
+7. Use `clone()` only when you truly need an independent copy.
+8. Prefer direct comparisons such as `eq`, `lt`, `gt`, `lte`, and `gte`.
+9. Use `toSuffix()` for compact gameplay UI and `toESuffix()` for extreme progression.
+10. Avoid formatting every frame unless the displayed value actually changed.
+11. Keep save/load conversion outside gameplay math loops.
+12. Use canonical scientific strings such as `"1e1000"` when constructing extreme values from text.
+
+## v1.2.1 hot-path design
+
+The performance-critical public math paths operate directly on the Bnum buffer. The common paths do not route through generic coercion or normalization first.
+
+The hot API is intentionally shaped more like:
+
+```text
+read sign/log
+perform math
+allocate/write result
+return
+```
+
+than:
+
+```text
+coerce
+normalize
+generic constructor
+math
+normalize again
+```
+
+The specialized `fromString()` path for canonical scientific values such as:
+
+```text
+1e1000
+-1e1000
+1e-1000
+```
+
+can avoid much of the generic decimal-string parsing work.
+
+Do not add result caching just to improve microbenchmarks. Bnum's performance model is intended to carry over to real gameplay workloads.
 
 ---
 
@@ -2441,6 +2496,8 @@ cmp
 
 The built-in benchmark is a microbenchmark, not a complete game-performance test.
 
+For full profiling, benchmark construction, arithmetic, formatting, economy/scaling helpers, compatibility calls, and reusable-buffer paths separately. Heavy functions such as sigmoid scaling should use lower or adaptively calibrated iteration counts so a benchmark does not hit Roblox's script timeout.
+
 Benchmark in the same Roblox environment and workload you care about before drawing conclusions from small timing differences.
 
 ---
@@ -2458,7 +2515,7 @@ Bnum.SIZE
 Current values:
 
 ```text
-VERSION         = "1.2.0"
+VERSION         = "1.2.1"
 STORAGE_VERSION = 1
 SIZE            = 12
 ```
@@ -2542,6 +2599,7 @@ addeq(a, b)
 subeq(a, b)
 muleq(a, b)
 diveq(a, b)
+poweq(a, b)
 ```
 
 ---
@@ -2624,6 +2682,7 @@ isNegative(value)
 
 isFloat(value)
 isFinite(value)
+isValid(value)
 isBnum(value)
 ```
 
@@ -2766,91 +2825,145 @@ compat.milestone
 
 ---
 
-# v1.2.0 Changes
+# v1.2.1 Changes
 
-## New exponent-suffix formatter
+## Flat core hot paths
 
-Added:
+The main benchmark-critical APIs are structured to do their work directly against the 12-byte representation.
 
-```lua
-Bnum.toESuffix()
-```
-
-Examples:
+Important hot functions include:
 
 ```text
-1e1000     -> E1k
-1e1020     -> E1.02k
-1e1200     -> E1.2k
-1e1000000  -> E1m
+fromNumber
+fromString
+add
+sub
+mul
+div
+pow
+powf
+sqrt
+log10
+toSuffix
 ```
 
-Aliases:
+The goal is to avoid unnecessary chains such as:
 
 ```text
-toExponentSuffix
-toExtendedSuffix
+public function
+-> raw helper
+-> normalizer
+-> constructor
 ```
+
+when the inputs are already valid Bnum buffers.
 
 ---
 
-## `toSuffix()` now truncates
+## Non-mutating normal math
 
-v1.2.0 changed compact suffix display to truncation.
+Regular math now returns new buffers.
 
-Before the intended v1.2.0 behavior:
-
-```text
-1.095e3 -> 1.1k
+```lua
+local Result = Bnum.mul(A, B)
 ```
 
-Current behavior:
+does not overwrite `A` or `B`.
+
+Intentional mutation is explicit:
+
+```lua
+Bnum.muleq(A, B)
+```
+
+The in-place set is:
+
+```text
+addeq
+subeq
+muleq
+diveq
+poweq
+```
+
+This makes ownership easier to reason about while preserving an allocation-minimized path for hot loops.
+
+---
+
+## Faster scientific `fromString()`
+
+Canonical scientific strings are a priority hot path.
+
+```text
+1e1000
+-1e1000
+1e-1000
+```
+
+can be handled more directly than a fully generic mantissa/exponent parse.
+
+For a value such as `1e1000`, Bnum's internal result is simply:
+
+```text
+sign = 1
+logMagnitude = 1000
+```
+
+so the parser can avoid unnecessary mantissa logarithm work.
+
+Generic forms such as:
+
+```text
+1.2345e1000
+```
+
+remain supported through the full parser.
+
+---
+
+## Faster suffix formatting
+
+`toSuffix()` keeps the existing truncation behavior while reducing work in the common suffix path.
+
+Examples remain:
 
 ```text
 1.095e3 -> 1.09k
+1.10e3  -> 1.1k
+1.02e3  -> 1.02k
 ```
 
-This prevents the displayed number from visually advancing before the underlying value reaches that point.
-
----
-
-## Trailing zero cleanup
+`toESuffix()` remains available for extreme exponents:
 
 ```text
-1.10k -> 1.1k
-1.20k -> 1.2k
-```
-
-while preserving meaningful zeros:
-
-```text
-1.02k -> 1.02k
+1e1000     -> E1k
+1e1000000  -> E1m
 ```
 
 ---
 
-## Whole upgrade counts
+## Stability and edge behavior
 
-`bulkCostNumber()` now floors normal-number purchase amounts.
+The v1.2.1 line keeps the stability work from the preceding releases:
 
-```text
-2.9 purchases -> 2 purchases
-```
-
-This keeps upgrade buying integer-based.
+- explicit NaN and ±Infinity handling
+- safer negative-base power handling
+- non-mutating normal unary math
+- protected comparison behavior around NaN
+- stable tiny/huge-number conversion behavior
+- `isValid()` for checking external buffers
+- unchanged 12-byte storage layout
 
 ---
 
-## v1.2.5 fixes retained
+## Storage compatibility
 
-v1.2.0 includes the previous fixes for:
+```text
+STORAGE_VERSION = 1
+SIZE            = 12
+```
 
-- verified Max Buy affordability boundaries
-- flat-cost Max Buy handling
-- negative-one power sign behavior
-- `maxBuyLimited()`
-- `buyMaxLimited()`
-- limited-purchase total-cost recalculation
+The v1.2.1 performance update does not require a serialized-data migration.
 
 ---
 
@@ -2875,7 +2988,7 @@ prefer:
 local Value = Bnum.fromString("1e100")
 local Multiplier = Bnum.fromNumber(2)
 
-Bnum.mul(Value, Multiplier)
+local Result = Bnum.mul(Value, Multiplier)
 ```
 
 ---
@@ -2892,7 +3005,7 @@ If your UI expected rounded compact suffixes:
 
 that is no longer the behavior.
 
-v1.2.0 intentionally displays:
+v1.2.1 displays:
 
 ```text
 1.095k -> 1.09k
@@ -2953,7 +3066,7 @@ This keeps string conversion and type checking away from the gameplay hot path.
 
 # Full Upgrade Button Example
 
-This combines the v1.2.0 purchase APIs into one practical pattern.
+This combines the current purchase APIs into one practical pattern.
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -3024,7 +3137,7 @@ so:
 # Version
 
 ```text
-Bnum v1.2.0
+Bnum v1.2.1
 Storage Version 1
 12-byte buffer representation
 ```
