@@ -7,6 +7,7 @@ local breadi8 = buffer.readi8
 local breadf64 = buffer.readf64
 local bwritei8 = buffer.writei8
 local bwritef64 = buffer.writef64
+local byte = string.byte
 
 local abs = math.abs
 local ceil = math.ceil
@@ -60,22 +61,37 @@ bwritei8(NEG_INF, SIGN_OFFSET, -1)
 bwritef64(NEG_INF, LOG_OFFSET, huge)
 
 local module = {
-	VERSION = "1.2",
+	VERSION = "1.2.1",
 	STORAGE_VERSION = 1,
 	SIZE = SIZE,
 }
 
-local function setRaw(out: buffer, s: number, l: number): buffer
+local function writeRaw(out: buffer, s: number, l: number): buffer
 	bwritei8(out, SIGN_OFFSET, s)
 	bwritef64(out, LOG_OFFSET, l)
 	return out
 end
 
-local function makeRaw(s: number, l: number): buffer
+local function makeFast(s: number, l: number): buffer
 	local out = bcreate(SIZE)
 	bwritei8(out, SIGN_OFFSET, s)
 	bwritef64(out, LOG_OFFSET, l)
 	return out
+end
+
+local function setRaw(out: buffer, s: number, l: number): buffer
+	if s == NAN_SIGN or l ~= l then
+		return writeRaw(out, NAN_SIGN, 0)
+	end
+	if s == 0 or l == -huge then
+		return writeRaw(out, 0, 0)
+	end
+	return writeRaw(out, if s < 0 then -1 else 1, l)
+end
+
+local function makeRaw(s: number, l: number): buffer
+	local out = bcreate(SIZE)
+	return setRaw(out, s, l)
 end
 
 local function cloneRaw(src: buffer): buffer
@@ -86,30 +102,36 @@ end
 
 local function fromFiniteNumber(n: number): buffer
 	if n == 0 then
-		return makeRaw(0, 0)
+		return makeFast(0, 0)
 	end
-	return makeRaw(signm(n), log10(abs(n)))
+	return makeFast(if n < 0 then -1 else 1, log10(abs(n)))
 end
 
 local function cmpRaw(a: buffer, b: buffer): number
 	local sa = breadi8(a, SIGN_OFFSET)
 	local sb = breadi8(b, SIGN_OFFSET)
+	if sa == NAN_SIGN or sb == NAN_SIGN then
+		return 0
+	end
 	if sa ~= sb then
 		return if sa > sb then 1 else -1
+	end
+	if sa == 0 then
+		return 0
 	end
 
 	local la = breadf64(a, LOG_OFFSET)
 	local lb = breadf64(b, LOG_OFFSET)
 	if la > lb then return sa end
 	if la < lb then return -sa end
-	return if sa == NAN_SIGN then -1 else 0
+	return 0
 end
 
 local function addRaw(out: buffer, a: buffer, b: buffer): buffer
 	local s1 = breadi8(a, SIGN_OFFSET)
 	local s2 = breadi8(b, SIGN_OFFSET)
 	if s1 == NAN_SIGN or s2 == NAN_SIGN then
-		return setRaw(out, NAN_SIGN, 0)
+		return writeRaw(out, NAN_SIGN, 0)
 	end
 	if s1 == 0 then
 		bcopy(out, 0, b, 0, SIZE)
@@ -124,12 +146,12 @@ local function addRaw(out: buffer, a: buffer, b: buffer): buffer
 	local l2 = breadf64(b, LOG_OFFSET)
 	if l1 == huge or l2 == huge then
 		if l1 == huge and l2 == huge and s1 ~= s2 then
-			return setRaw(out, NAN_SIGN, 0)
+			return writeRaw(out, NAN_SIGN, 0)
 		end
 		if l1 == huge then
-			return setRaw(out, s1, huge)
+			return writeRaw(out, s1, huge)
 		end
-		return setRaw(out, s2, huge)
+		return writeRaw(out, s2, huge)
 	end
 
 	local d = l1 - l2
@@ -142,30 +164,30 @@ local function addRaw(out: buffer, a: buffer, b: buffer): buffer
 		return out
 	end
 	if d == 0 and s1 ~= s2 then
-		return setRaw(out, 0, 0)
+		return writeRaw(out, 0, 0)
 	end
 
 	if s1 == s2 then
 		if d >= 0 then
-			return setRaw(out, s1, l1 + log10(1 + 10 ^ (-d)))
+			return writeRaw(out, s1, l1 + log10(1 + 10 ^ (-d)))
 		end
-		return setRaw(out, s1, l2 + log10(1 + 10 ^ d))
+		return writeRaw(out, s1, l2 + log10(1 + 10 ^ d))
 	end
 
 	if d > 0 then
-		return setRaw(out, s1, l1 + log10(1 - 10 ^ (-d)))
+		return writeRaw(out, s1, l1 + log10(1 - 10 ^ (-d)))
 	end
 	if d < 0 then
-		return setRaw(out, s2, l2 + log10(1 - 10 ^ d))
+		return writeRaw(out, s2, l2 + log10(1 - 10 ^ d))
 	end
-	return setRaw(out, 0, 0)
+	return writeRaw(out, 0, 0)
 end
 
 local function subRaw(out: buffer, a: buffer, b: buffer): buffer
 	local s1 = breadi8(a, SIGN_OFFSET)
 	local s2 = breadi8(b, SIGN_OFFSET)
 	if s1 == NAN_SIGN or s2 == NAN_SIGN then
-		return setRaw(out, NAN_SIGN, 0)
+		return writeRaw(out, NAN_SIGN, 0)
 	end
 	if s2 == 0 then
 		bcopy(out, 0, a, 0, SIZE)
@@ -181,12 +203,12 @@ local function subRaw(out: buffer, a: buffer, b: buffer): buffer
 	local l2 = breadf64(b, LOG_OFFSET)
 	if l1 == huge or l2 == huge then
 		if l1 == huge and l2 == huge and s1 == s2 then
-			return setRaw(out, NAN_SIGN, 0)
+			return writeRaw(out, NAN_SIGN, 0)
 		end
 		if l1 == huge then
-			return setRaw(out, s1, huge)
+			return writeRaw(out, s1, huge)
 		end
-		return setRaw(out, -s2, huge)
+		return writeRaw(out, -s2, huge)
 	end
 
 	local d = l1 - l2
@@ -200,63 +222,62 @@ local function subRaw(out: buffer, a: buffer, b: buffer): buffer
 		return out
 	end
 	if d == 0 and s1 == s2 then
-		return setRaw(out, 0, 0)
+		return writeRaw(out, 0, 0)
 	end
 
 	if s1 ~= s2 then
 		if d >= 0 then
-			return setRaw(out, s1, l1 + log10(1 + 10 ^ (-d)))
+			return writeRaw(out, s1, l1 + log10(1 + 10 ^ (-d)))
 		end
-		return setRaw(out, s1, l2 + log10(1 + 10 ^ d))
+		return writeRaw(out, s1, l2 + log10(1 + 10 ^ d))
 	end
 
 	if d > 0 then
-		return setRaw(out, s1, l1 + log10(1 - 10 ^ (-d)))
+		return writeRaw(out, s1, l1 + log10(1 - 10 ^ (-d)))
 	end
 	if d < 0 then
-		return setRaw(out, -s1, l2 + log10(1 - 10 ^ d))
+		return writeRaw(out, -s1, l2 + log10(1 - 10 ^ d))
 	end
-	return setRaw(out, 0, 0)
+	return writeRaw(out, 0, 0)
 end
 
 local function mulRaw(out: buffer, a: buffer, b: buffer): buffer
 	local s1 = breadi8(a, SIGN_OFFSET)
 	local s2 = breadi8(b, SIGN_OFFSET)
 	if s1 == NAN_SIGN or s2 == NAN_SIGN then
-		return setRaw(out, NAN_SIGN, 0)
+		return writeRaw(out, NAN_SIGN, 0)
 	end
 	if s1 == 0 or s2 == 0 then
-		local l1 = breadf64(a, LOG_OFFSET)
-		local l2 = breadf64(b, LOG_OFFSET)
-		if l1 == huge or l2 == huge then
-			return setRaw(out, NAN_SIGN, 0)
+		if breadf64(a, LOG_OFFSET) == huge or breadf64(b, LOG_OFFSET) == huge then
+			return writeRaw(out, NAN_SIGN, 0)
 		end
-		return setRaw(out, 0, 0)
+		return writeRaw(out, 0, 0)
 	end
-	return setRaw(out, s1 * s2, breadf64(a, LOG_OFFSET) + breadf64(b, LOG_OFFSET))
+	return writeRaw(out, s1 * s2, breadf64(a, LOG_OFFSET) + breadf64(b, LOG_OFFSET))
 end
 
 local function divRaw(out: buffer, a: buffer, b: buffer): buffer
 	local s1 = breadi8(a, SIGN_OFFSET)
 	local s2 = breadi8(b, SIGN_OFFSET)
 	if s1 == NAN_SIGN or s2 == NAN_SIGN then
-		return setRaw(out, NAN_SIGN, 0)
+		return writeRaw(out, NAN_SIGN, 0)
 	end
 	if s2 == 0 then
 		if s1 == 0 then
-			return setRaw(out, NAN_SIGN, 0)
+			return writeRaw(out, NAN_SIGN, 0)
 		end
-		return setRaw(out, s1, huge)
+		return writeRaw(out, s1, huge)
 	end
 	if s1 == 0 then
-		return setRaw(out, 0, 0)
+		return writeRaw(out, 0, 0)
 	end
 	local l1 = breadf64(a, LOG_OFFSET)
 	local l2 = breadf64(b, LOG_OFFSET)
-	if l1 == huge and l2 == huge then
-		return setRaw(out, NAN_SIGN, 0)
+	if l2 == huge then
+		if l1 == huge then return writeRaw(out, NAN_SIGN, 0) end
+		return writeRaw(out, 0, 0)
 	end
-	return setRaw(out, s1 * s2, l1 - l2)
+	return writeRaw(out, s1 * s2, l1 - l2)
 end
 
 local suffixCache = table.create(1000)
@@ -276,23 +297,34 @@ local function roundedNumber(n: number, digits: number): number
 	return floor(n * p + 0.5) / p
 end
 
+local suffixFractionText = table.create(100)
+suffixFractionText[0] = ""
+for i = 1, 99 do
+	if i % 10 == 0 then
+		suffixFractionText[i] = "." .. tostring(i // 10)
+	elseif i < 10 then
+		suffixFractionText[i] = ".0" .. tostring(i)
+	else
+		suffixFractionText[i] = "." .. tostring(i)
+	end
+end
+
+local suffixFastText = table.create(1000)
+for i = 100, 999 do
+	local whole = i // 100
+	local frac = i - whole * 100
+	if frac == 0 then
+		suffixFastText[i] = tostring(whole)
+	else
+		suffixFastText[i] = tostring(whole) .. suffixFractionText[frac]
+	end
+end
+
 local function suffixHundredthsText(value100: number): string
 	local whole = value100 // 100
 	local frac = value100 - whole * 100
-
-	if frac <= 0 then
-		return tostring(whole)
-	end
-
-	if frac % 10 == 0 then
-		return tostring(whole) .. "." .. tostring(frac // 10)
-	end
-
-	if frac < 10 then
-		return tostring(whole) .. ".0" .. tostring(frac)
-	end
-
-	return tostring(whole) .. "." .. tostring(frac)
+	if frac == 0 then return tostring(whole) end
+	return tostring(whole) .. suffixFractionText[frac]
 end
 
 local function suffixTruncated100(n: number): number
@@ -343,6 +375,9 @@ end
 function module.ensure(val: any): buffer
 	local t = type(val)
 	if t == "buffer" then
+		if buffer.len(val) < SIZE then
+			error("Invalid Bnum buffer: expected at least " .. tostring(SIZE) .. " bytes", 2)
+		end
 		return val
 	end
 	if t == "number" then
@@ -392,9 +427,7 @@ end
 
 module.coerce = module.ensure
 
-function module.clone(val: buffer): buffer
-	return cloneRaw(val)
-end
+module.clone = cloneRaw
 
 function module.new(man: number, exponent: number): buffer
 	if man ~= man or exponent ~= exponent then
@@ -407,35 +440,282 @@ function module.new(man: number, exponent: number): buffer
 end
 
 function module.fromNumber(val: number): buffer
+	local out = bcreate(SIZE)
 	if type(val) ~= "number" or val ~= val then
-		return cloneRaw(NAN)
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN)
+		bwritef64(out, LOG_OFFSET, 0)
+		return out
 	end
-	if val == huge then return cloneRaw(INF) end
-	if val == -huge then return cloneRaw(NEG_INF) end
-	return fromFiniteNumber(val)
+	if val == huge then
+		bwritei8(out, SIGN_OFFSET, 1)
+		bwritef64(out, LOG_OFFSET, huge)
+		return out
+	end
+	if val == -huge then
+		bwritei8(out, SIGN_OFFSET, -1)
+		bwritef64(out, LOG_OFFSET, huge)
+		return out
+	end
+	if val == 0 then
+		bwritei8(out, SIGN_OFFSET, 0)
+		bwritef64(out, LOG_OFFSET, 0)
+		return out
+	end
+	bwritei8(out, SIGN_OFFSET, if val < 0 then -1 else 1)
+	bwritef64(out, LOG_OFFSET, log10(abs(val)))
+	return out
 end
 
 function module.fromString(val: string): buffer
-	if val == "NaN" or val == "nan" then return cloneRaw(NAN) end
-	if val == "Inf" or val == "inf" or val == "+Inf" or val == "+inf" then return cloneRaw(INF) end
-	if val == "-Inf" or val == "-inf" then return cloneRaw(NEG_INF) end
-	local e = find(val, "e", 1, true) or find(val, "E", 1, true)
-	if e then
+	local len = #val
+	local c1 = byte(val, 1)
+	local sciSign = 1
+	local digit = -1
+	local expStart = 0
+
+	if c1 ~= nil then
+		local c2 = byte(val, 2)
+
+		if c1 >= 48 and c1 <= 57 then
+			if c2 == 101 or c2 == 69 then
+				digit = c1 - 48
+				expStart = 3
+			end
+		elseif c1 == 45 or c1 == 43 then
+			local c3 = byte(val, 3)
+
+			if c2 ~= nil
+				and c2 >= 48
+				and c2 <= 57
+				and (c3 == 101 or c3 == 69)
+			then
+				digit = c2 - 48
+				sciSign = if c1 == 45 then -1 else 1
+				expStart = 4
+			end
+		end
+	end
+
+	if expStart ~= 0 then
+		local i = expStart
+		local exponentSign = 1
+		local c = byte(val, i)
+
+		if c == 43 then
+			i += 1
+		elseif c == 45 then
+			exponentSign = -1
+			i += 1
+		end
+
+		local valid = i <= len
+		local exponent = 0
+
+		while valid and i <= len do
+			c = byte(val, i)
+
+			if c == nil or c < 48 or c > 57 then
+				valid = false
+				break
+			end
+
+			exponent = exponent * 10 + c - 48
+			i += 1
+		end
+
+		if valid then
+			exponent *= exponentSign
+
+			local out = bcreate(SIZE)
+
+			if digit == 0 then
+				bwritei8(out, SIGN_OFFSET, 0)
+				bwritef64(out, LOG_OFFSET, 0)
+				return out
+			end
+
+			bwritei8(out, SIGN_OFFSET, sciSign)
+
+			if digit == 1 then
+				bwritef64(out, LOG_OFFSET, exponent)
+			else
+				bwritef64(
+					out,
+					LOG_OFFSET,
+					log10(digit) + exponent
+				)
+			end
+
+			return out
+		end
+	end
+
+	local e = find(val, "e", 1, true)
+	if e == nil then
+		e = find(val, "E", 1, true)
+	end
+	if e ~= nil then
 		local man = tonumber(sub(val, 1, e - 1))
 		local exponent = tonumber(sub(val, e + 1))
-		if not man or not exponent or man ~= man or exponent ~= exponent then return cloneRaw(NAN) end
-		if man == 0 then return cloneRaw(ZERO) end
-		return makeRaw(signm(man), log10(abs(man)) + exponent)
+
+		local out = bcreate(SIZE)
+
+		if man == nil
+			or exponent == nil
+			or man ~= man
+			or exponent ~= exponent
+		then
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN)
+			bwritef64(out, LOG_OFFSET, 0)
+			return out
+		end
+
+		if man == 0 then
+			bwritei8(out, SIGN_OFFSET, 0)
+			bwritef64(out, LOG_OFFSET, 0)
+			return out
+		end
+
+		local magnitude = abs(man)
+		local resultLog = exponent
+
+		if magnitude ~= 1 then
+			resultLog += log10(magnitude)
+		end
+
+		bwritei8(
+			out,
+			SIGN_OFFSET,
+			if man < 0 then -1 else 1
+		)
+
+		bwritef64(
+			out,
+			LOG_OFFSET,
+			resultLog
+		)
+
+		return out
 	end
 	local n = tonumber(val)
-	if not n or n ~= n then return cloneRaw(NAN) end
-	if n == huge then return cloneRaw(INF) end
-	if n == -huge then return cloneRaw(NEG_INF) end
-	return fromFiniteNumber(n)
+
+	if n ~= nil then
+		local out = bcreate(SIZE)
+
+		if n ~= n then
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN)
+			bwritef64(out, LOG_OFFSET, 0)
+			return out
+		end
+
+		if n == huge then
+			bwritei8(out, SIGN_OFFSET, 1)
+			bwritef64(out, LOG_OFFSET, huge)
+			return out
+		end
+
+		if n == -huge then
+			bwritei8(out, SIGN_OFFSET, -1)
+			bwritef64(out, LOG_OFFSET, huge)
+			return out
+		end
+
+		if n == 0 then
+			bwritei8(out, SIGN_OFFSET, 0)
+			bwritef64(out, LOG_OFFSET, 0)
+			return out
+		end
+
+		bwritei8(
+			out,
+			SIGN_OFFSET,
+			if n < 0 then -1 else 1
+		)
+
+		bwritef64(
+			out,
+			LOG_OFFSET,
+			log10(abs(n))
+		)
+
+		return out
+	end
+	
+	local out = bcreate(SIZE)
+
+	if val == "NaN" or val == "nan" then
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN)
+		bwritef64(out, LOG_OFFSET, 0)
+		return out
+	end
+
+	if val == "Inf"
+		or val == "inf"
+		or val == "+Inf"
+		or val == "+inf"
+	then
+		bwritei8(out, SIGN_OFFSET, 1)
+		bwritef64(out, LOG_OFFSET, huge)
+		return out
+	end
+
+	if val == "-Inf" or val == "-inf" then
+		bwritei8(out, SIGN_OFFSET, -1)
+		bwritef64(out, LOG_OFFSET, huge)
+		return out
+	end
+
+	bwritei8(out, SIGN_OFFSET, NAN_SIGN)
+	bwritef64(out, LOG_OFFSET, 0)
+	return out
 end
 
 function module.addBuffer(a: buffer, b: buffer, out: buffer?): buffer
-	return addRaw(out or bcreate(SIZE), a, b)
+	local o = out or bcreate(SIZE)
+	local s1 = breadi8(a, SIGN_OFFSET)
+	local s2 = breadi8(b, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then
+		bwritei8(o, SIGN_OFFSET, NAN_SIGN); bwritef64(o, LOG_OFFSET, 0); return o
+	end
+	if s1 == 0 then bcopy(o, 0, b, 0, SIZE); return o end
+	if s2 == 0 then bcopy(o, 0, a, 0, SIZE); return o end
+
+	local l1 = breadf64(a, LOG_OFFSET)
+	local l2 = breadf64(b, LOG_OFFSET)
+	if l1 == huge or l2 == huge then
+		if l1 == huge and l2 == huge and s1 ~= s2 then
+			bwritei8(o, SIGN_OFFSET, NAN_SIGN); bwritef64(o, LOG_OFFSET, 0); return o
+		end
+		if l1 == huge then bwritei8(o, SIGN_OFFSET, s1); bwritef64(o, LOG_OFFSET, huge); return o end
+		bwritei8(o, SIGN_OFFSET, s2); bwritef64(o, LOG_OFFSET, huge); return o
+	end
+
+	local d = l1 - l2
+	if d > DOMINANCE then bcopy(o, 0, a, 0, SIZE); return o end
+	if d < -DOMINANCE then bcopy(o, 0, b, 0, SIZE); return o end
+	if d == 0 and s1 ~= s2 then
+		bwritei8(o, SIGN_OFFSET, 0); bwritef64(o, LOG_OFFSET, 0); return o
+	end
+
+	local signOut: number
+	local logOut: number
+	if s1 == s2 then
+		signOut = s1
+		if d >= 0 then logOut = l1 + log10(1 + 10 ^ (-d))
+		else logOut = l2 + log10(1 + 10 ^ d) end
+	elseif d > 0 then
+		signOut = s1
+		logOut = l1 + log10(1 - 10 ^ (-d))
+	elseif d < 0 then
+		signOut = s2
+		logOut = l2 + log10(1 - 10 ^ d)
+	else
+		signOut = 0
+		logOut = 0
+	end
+	bwritei8(o, SIGN_OFFSET, signOut)
+	bwritef64(o, LOG_OFFSET, logOut)
+	return o
 end
 
 function module.subBuffer(a: buffer, b: buffer, out: buffer?): buffer
@@ -469,15 +749,109 @@ function module.diveq(a: buffer, b: buffer): buffer
 end
 
 function module.add(val1: buffer, val2: buffer): buffer
-	local a = val1
-	local b = val2
-	return addRaw(bcreate(SIZE), a, b)
+	local out = bcreate(SIZE)
+	local s1 = breadi8(val1, SIGN_OFFSET)
+	local s2 = breadi8(val2, SIGN_OFFSET)
+
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	if s1 == 0 then bcopy(out, 0, val2, 0, SIZE); return out end
+	if s2 == 0 then bcopy(out, 0, val1, 0, SIZE); return out end
+
+	local l1 = breadf64(val1, LOG_OFFSET)
+	local l2 = breadf64(val2, LOG_OFFSET)
+	if l1 == huge or l2 == huge then
+		if l1 == huge and l2 == huge and s1 ~= s2 then
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+		end
+		if l1 == huge then bwritei8(out, SIGN_OFFSET, s1); bwritef64(out, LOG_OFFSET, huge); return out end
+		bwritei8(out, SIGN_OFFSET, s2); bwritef64(out, LOG_OFFSET, huge); return out
+	end
+
+	local d = l1 - l2
+	if d > DOMINANCE then bcopy(out, 0, val1, 0, SIZE); return out end
+	if d < -DOMINANCE then bcopy(out, 0, val2, 0, SIZE); return out end
+	if d == 0 and s1 ~= s2 then
+		bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+
+	local signOut: number
+	local logOut: number
+	if s1 == s2 then
+		signOut = s1
+		if d >= 0 then logOut = l1 + log10(1 + 10 ^ (-d))
+		else logOut = l2 + log10(1 + 10 ^ d) end
+	elseif d > 0 then
+		signOut = s1
+		logOut = l1 + log10(1 - 10 ^ (-d))
+	elseif d < 0 then
+		signOut = s2
+		logOut = l2 + log10(1 - 10 ^ d)
+	else
+		signOut = 0
+		logOut = 0
+	end
+	bwritei8(out, SIGN_OFFSET, signOut)
+	bwritef64(out, LOG_OFFSET, logOut)
+	return out
 end
 
 function module.sub(val1: buffer, val2: buffer): buffer
-	local a = val1
-	local b = val2
-	return subRaw(a, a, b)
+	local out = bcreate(SIZE)
+	local s1 = breadi8(val1, SIGN_OFFSET)
+	local s2 = breadi8(val2, SIGN_OFFSET)
+
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	if s2 == 0 then bcopy(out, 0, val1, 0, SIZE); return out end
+	if s1 == 0 then
+		bcopy(out, 0, val2, 0, SIZE)
+		bwritei8(out, SIGN_OFFSET, -s2)
+		return out
+	end
+
+	local l1 = breadf64(val1, LOG_OFFSET)
+	local l2 = breadf64(val2, LOG_OFFSET)
+	if l1 == huge or l2 == huge then
+		if l1 == huge and l2 == huge and s1 == s2 then
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+		end
+		if l1 == huge then bwritei8(out, SIGN_OFFSET, s1); bwritef64(out, LOG_OFFSET, huge); return out end
+		bwritei8(out, SIGN_OFFSET, -s2); bwritef64(out, LOG_OFFSET, huge); return out
+	end
+
+	local d = l1 - l2
+	if d > DOMINANCE then bcopy(out, 0, val1, 0, SIZE); return out end
+	if d < -DOMINANCE then
+		bcopy(out, 0, val2, 0, SIZE)
+		bwritei8(out, SIGN_OFFSET, -s2)
+		return out
+	end
+	if d == 0 and s1 == s2 then
+		bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+
+	local signOut: number
+	local logOut: number
+	if s1 ~= s2 then
+		signOut = s1
+		if d >= 0 then logOut = l1 + log10(1 + 10 ^ (-d))
+		else logOut = l2 + log10(1 + 10 ^ d) end
+	elseif d > 0 then
+		signOut = s1
+		logOut = l1 + log10(1 - 10 ^ (-d))
+	elseif d < 0 then
+		signOut = -s1
+		logOut = l2 + log10(1 - 10 ^ d)
+	else
+		signOut = 0
+		logOut = 0
+	end
+	bwritei8(out, SIGN_OFFSET, signOut)
+	bwritef64(out, LOG_OFFSET, logOut)
+	return out
 end
 
 function module.subz(val1: buffer, val2: buffer): buffer
@@ -489,34 +863,67 @@ function module.subz(val1: buffer, val2: buffer): buffer
 end
 
 function module.mul(val1: buffer, val2: buffer): buffer
-	local a = val1
-	local b = val2
-	return mulRaw(a, a, b)
+	local out = bcreate(SIZE)
+	local s1 = breadi8(val1, SIGN_OFFSET)
+	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	if s1 == 0 or s2 == 0 then
+		if breadf64(val1, LOG_OFFSET) == huge or breadf64(val2, LOG_OFFSET) == huge then
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+		end
+		bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	bwritei8(out, SIGN_OFFSET, s1 * s2)
+	bwritef64(out, LOG_OFFSET, breadf64(val1, LOG_OFFSET) + breadf64(val2, LOG_OFFSET))
+	return out
 end
 
 function module.div(val1: buffer, val2: buffer): buffer
-	local a = val1
-	local b = val2
-	return divRaw(a, a, b)
+	local out = bcreate(SIZE)
+	local s1 = breadi8(val1, SIGN_OFFSET)
+	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	if s2 == 0 then
+		if s1 == 0 then
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+		end
+		bwritei8(out, SIGN_OFFSET, s1); bwritef64(out, LOG_OFFSET, huge); return out
+	end
+	if s1 == 0 then
+		bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	local l1 = breadf64(val1, LOG_OFFSET)
+	local l2 = breadf64(val2, LOG_OFFSET)
+	if l2 == huge then
+		if l1 == huge then
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+		end
+		bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	bwritei8(out, SIGN_OFFSET, s1 * s2)
+	bwritef64(out, LOG_OFFSET, l1 - l2)
+	return out
 end
 
-function module.pow(val1: buffer, val2: buffer): buffer
-	local a = val1
-	local b = val2
+local function powRaw(out: buffer, a: buffer, b: buffer): buffer
 	local s1 = breadi8(a, SIGN_OFFSET)
 	local s2 = breadi8(b, SIGN_OFFSET)
 
 	if s1 == NAN_SIGN or s2 == NAN_SIGN then
-		return setRaw(a, NAN_SIGN, 0)
+		return writeRaw(out, NAN_SIGN, 0)
 	end
 	if s2 == 0 then
-		return setRaw(a, 1, 0)
+		return writeRaw(out, 1, 0)
 	end
 	if s1 == 0 then
 		if s2 < 0 then
-			return setRaw(a, 1, huge)
+			return writeRaw(out, 1, huge)
 		end
-		return setRaw(a, 0, 0)
+		return writeRaw(out, 0, 0)
 	end
 
 	local l1 = breadf64(a, LOG_OFFSET)
@@ -524,18 +931,18 @@ function module.pow(val1: buffer, val2: buffer): buffer
 	local power = s2 * 10 ^ l2
 
 	if power ~= power then
-		return setRaw(a, NAN_SIGN, 0)
+		return writeRaw(out, NAN_SIGN, 0)
 	end
 
 	local outSign = 1
 	if s1 < 0 then
 		if power == huge or power == -huge then
-			return setRaw(a, NAN_SIGN, 0)
+			return writeRaw(out, NAN_SIGN, 0)
 		end
 
 		local nearest = round(power)
 		if abs(power - nearest) > 1e-10 then
-			return setRaw(a, NAN_SIGN, 0)
+			return writeRaw(out, NAN_SIGN, 0)
 		end
 
 		if nearest % 2 ~= 0 then
@@ -544,110 +951,151 @@ function module.pow(val1: buffer, val2: buffer): buffer
 	end
 
 	if l1 == 0 then
-		return setRaw(a, outSign, 0)
+		return writeRaw(out, outSign, 0)
+	end
+
+	local resultLog = l1 * power
+	if resultLog ~= resultLog then return writeRaw(out, NAN_SIGN, 0) end
+	if resultLog == -huge then return writeRaw(out, 0, 0) end
+	return writeRaw(out, outSign, resultLog)
+end
+
+function module.pow(val1: buffer, val2: buffer): buffer
+	local out = bcreate(SIZE)
+	local s1 = breadi8(val1, SIGN_OFFSET)
+	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	if s2 == 0 then
+		bwritei8(out, SIGN_OFFSET, 1); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	if s1 == 0 then
+		bwritei8(out, SIGN_OFFSET, if s2 < 0 then 1 else 0)
+		bwritef64(out, LOG_OFFSET, if s2 < 0 then huge else 0)
+		return out
+	end
+
+	local l1 = breadf64(val1, LOG_OFFSET)
+	local power = s2 * 10 ^ breadf64(val2, LOG_OFFSET)
+	if power ~= power then
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+
+	local outSign = 1
+	if s1 < 0 then
+		if power == huge or power == -huge then
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+		end
+		local nearest = round(power)
+		if abs(power - nearest) > 1e-10 then
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+		end
+		if nearest % 2 ~= 0 then outSign = -1 end
+	end
+
+	if l1 == 0 then
+		bwritei8(out, SIGN_OFFSET, outSign)
+		bwritef64(out, LOG_OFFSET, 0)
+		return out
 	end
 
 	local resultLog = l1 * power
 	if resultLog ~= resultLog then
-		return setRaw(a, NAN_SIGN, 0)
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
 	end
 	if resultLog == -huge then
-		return setRaw(a, 0, 0)
+		bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0); return out
 	end
+	bwritei8(out, SIGN_OFFSET, outSign)
+	bwritef64(out, LOG_OFFSET, resultLog)
+	return out
+end
 
-	return setRaw(a, outSign, resultLog)
+function module.poweq(val1: buffer, val2: buffer): buffer
+	return powRaw(val1, val1, val2)
 end
 
 function module.pow10(val: buffer): buffer
-	local a = val
-	local s = breadi8(a, SIGN_OFFSET)
-	if s == NAN_SIGN then
-		return setRaw(a, NAN_SIGN, 0)
-	end
-	if s == 0 then
-		return setRaw(a, 1, 0)
-	end
-	local l = breadf64(a, LOG_OFFSET)
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN then return makeFast(NAN_SIGN, 0) end
+	if s == 0 then return makeFast(1, 0) end
+	local l = breadf64(val, LOG_OFFSET)
 	if l == huge then
-		if s > 0 then
-			return setRaw(a, 1, huge)
-		end
-		return setRaw(a, 0, 0)
+		if s > 0 then return makeFast(1, huge) end
+		return makeFast(0, 0)
 	end
-	return setRaw(a, 1, s * 10 ^ l)
+	local resultLog = s * 10 ^ l
+	if resultLog == -huge then return makeFast(0, 0) end
+	return makeFast(1, resultLog)
 end
 
 function module.sqrt(val: buffer): buffer
-	local a = val
-	local s = breadi8(a, SIGN_OFFSET)
+	local out = bcreate(SIZE)
+	local s = breadi8(val, SIGN_OFFSET)
 	if s == NAN_SIGN or s < 0 then
-		return setRaw(a, NAN_SIGN, 0)
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
 	end
 	if s == 0 then
-		return setRaw(a, 0, 0)
+		bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0); return out
 	end
-	return setRaw(a, 1, breadf64(a, LOG_OFFSET) * 0.5)
+	bwritei8(out, SIGN_OFFSET, 1)
+	bwritef64(out, LOG_OFFSET, breadf64(val, LOG_OFFSET) * 0.5)
+	return out
 end
 
 function module.log10(val: buffer): buffer
-	local a = val
-	local s = breadi8(a, SIGN_OFFSET)
+	local out = bcreate(SIZE)
+	local s = breadi8(val, SIGN_OFFSET)
 	if s <= 0 then
-		return setRaw(a, NAN_SIGN, 0)
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
 	end
-	local l = breadf64(a, LOG_OFFSET)
+	local l = breadf64(val, LOG_OFFSET)
 	if l == 0 then
-		return setRaw(a, 0, 0)
+		bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0); return out
 	end
 	if l == huge then
-		return setRaw(a, 1, huge)
+		bwritei8(out, SIGN_OFFSET, 1); bwritef64(out, LOG_OFFSET, huge); return out
 	end
-	return setRaw(a, signm(l), log10(abs(l)))
+	bwritei8(out, SIGN_OFFSET, if l < 0 then -1 else 1)
+	bwritef64(out, LOG_OFFSET, log10(abs(l)))
+	return out
 end
 
 function module.log(val1: buffer, val2: buffer?): buffer
-	local a = val1
-	local s1 = breadi8(a, SIGN_OFFSET)
-	if s1 <= 0 then
-		return setRaw(a, NAN_SIGN, 0)
-	end
-	local l1 = breadf64(a, LOG_OFFSET)
+	local s1 = breadi8(val1, SIGN_OFFSET)
+	if s1 <= 0 then return makeFast(NAN_SIGN, 0) end
+	local l1 = breadf64(val1, LOG_OFFSET)
 	if val2 == nil then
 		local result = l1 * 2.302585092994046
-		if result == 0 then return setRaw(a, 0, 0) end
-		return setRaw(a, signm(result), log10(abs(result)))
+		if result == 0 then return makeFast(0, 0) end
+		if result ~= result then return makeFast(NAN_SIGN, 0) end
+		return makeFast(if result < 0 then -1 else 1, log10(abs(result)))
 	end
-	local b = val2
-	local s2 = breadi8(b, SIGN_OFFSET)
-	if s2 <= 0 then
-		return setRaw(a, NAN_SIGN, 0)
-	end
-	local l2 = breadf64(b, LOG_OFFSET)
-	if l2 == 0 then
-		return setRaw(a, NAN_SIGN, 0)
-	end
+	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s2 <= 0 then return makeFast(NAN_SIGN, 0) end
+	local l2 = breadf64(val2, LOG_OFFSET)
+	if l2 == 0 then return makeFast(NAN_SIGN, 0) end
 	local result = l1 / l2
-	if result == 0 then return setRaw(a, 0, 0) end
-	return setRaw(a, signm(result), log10(abs(result)))
+	if result ~= result then return makeFast(NAN_SIGN, 0) end
+	if result == 0 then return makeFast(0, 0) end
+	return makeFast(if result < 0 then -1 else 1, log10(abs(result)))
 end
 
 module.ln = module.log
 
 function module.exp(val: buffer): buffer
-	local a = val
-	local s = breadi8(a, SIGN_OFFSET)
-	if s == NAN_SIGN then
-		return setRaw(a, NAN_SIGN, 0)
-	end
-	if s == 0 then
-		return setRaw(a, 1, 0)
-	end
-	local l = breadf64(a, LOG_OFFSET)
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN then return makeFast(NAN_SIGN, 0) end
+	if s == 0 then return makeFast(1, 0) end
+	local l = breadf64(val, LOG_OFFSET)
 	if l == huge then
-		if s > 0 then return setRaw(a, 1, huge) end
-		return setRaw(a, 0, 0)
+		if s > 0 then return makeFast(1, huge) end
+		return makeFast(0, 0)
 	end
-	return setRaw(a, 1, LOG10_E * s * 10 ^ l)
+	local resultLog = LOG10_E * s * 10 ^ l
+	if resultLog == -huge then return makeFast(0, 0) end
+	return makeFast(1, resultLog)
 end
 
 function module.random(val1: buffer?, val2: buffer?): buffer
@@ -660,17 +1108,30 @@ function module.random(val1: buffer?, val2: buffer?): buffer
 	end
 	local a = val1 :: buffer
 	local b = val2 :: buffer
-	if cmpRaw(a, b) > 0 then
-		a, b = b, a
-	end
 	local s1 = breadi8(a, SIGN_OFFSET)
 	local s2 = breadi8(b, SIGN_OFFSET)
-	if s1 <= 0 or s2 <= 0 then
-		return fromFiniteNumber(random())
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then
+		return cloneRaw(NAN)
 	end
-	local l1 = breadf64(a, LOG_OFFSET)
-	local l2 = breadf64(b, LOG_OFFSET)
-	return makeRaw(1, l1 + random() * (l2 - l1))
+	if cmpRaw(a, b) > 0 then
+		a, b = b, a
+		s1, s2 = s2, s1
+	end
+	if s1 == s2 and s1 ~= 0 then
+		local l1 = breadf64(a, LOG_OFFSET)
+		local l2 = breadf64(b, LOG_OFFSET)
+		if l1 > 308.25471555991675 or l2 > 308.25471555991675 then
+			local l = l1 + random() * (l2 - l1)
+			return makeRaw(s1, l)
+		end
+	end
+	local n1 = module.toNumber(a)
+	local n2 = module.toNumber(b)
+	if n1 == -huge or n2 == huge or n1 ~= n1 or n2 ~= n2 then
+		return cloneRaw(NAN)
+	end
+	local r = random()
+	return fromFiniteNumber(n1 * (1 - r) + n2 * r)
 end
 
 module.cmp = cmpRaw
@@ -686,8 +1147,8 @@ end
 function module.le(val1: buffer, val2: buffer): boolean
 	local s1 = breadi8(val1, SIGN_OFFSET)
 	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then return false end
 	if s1 ~= s2 then return s1 < s2 end
-	if s1 == NAN_SIGN then return false end
 	if s1 == 0 then return false end
 	local l1 = breadf64(val1, LOG_OFFSET)
 	local l2 = breadf64(val2, LOG_OFFSET)
@@ -697,8 +1158,8 @@ end
 function module.me(val1: buffer, val2: buffer): boolean
 	local s1 = breadi8(val1, SIGN_OFFSET)
 	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then return false end
 	if s1 ~= s2 then return s1 > s2 end
-	if s1 == NAN_SIGN then return false end
 	if s1 == 0 then return false end
 	local l1 = breadf64(val1, LOG_OFFSET)
 	local l2 = breadf64(val2, LOG_OFFSET)
@@ -708,8 +1169,8 @@ end
 function module.leeq(val1: buffer, val2: buffer): boolean
 	local s1 = breadi8(val1, SIGN_OFFSET)
 	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then return false end
 	if s1 ~= s2 then return s1 < s2 end
-	if s1 == NAN_SIGN then return false end
 	if s1 == 0 then return true end
 	local l1 = breadf64(val1, LOG_OFFSET)
 	local l2 = breadf64(val2, LOG_OFFSET)
@@ -719,8 +1180,8 @@ end
 function module.meeq(val1: buffer, val2: buffer): boolean
 	local s1 = breadi8(val1, SIGN_OFFSET)
 	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then return false end
 	if s1 ~= s2 then return s1 > s2 end
-	if s1 == NAN_SIGN then return false end
 	if s1 == 0 then return true end
 	local l1 = breadf64(val1, LOG_OFFSET)
 	local l2 = breadf64(val2, LOG_OFFSET)
@@ -737,90 +1198,85 @@ function module.min(...: buffer): buffer
 	local count = select('#', ...)
 	if count == 0 then return cloneRaw(NAN) end
 	local best = select(1, ...)
+	if breadi8(best, SIGN_OFFSET) == NAN_SIGN then return cloneRaw(NAN) end
 	for i = 2, count do
 		local v = select(i, ...)
+		if breadi8(v, SIGN_OFFSET) == NAN_SIGN then return cloneRaw(NAN) end
 		if cmpRaw(v, best) < 0 then best = v end
 	end
-	return best
+	return cloneRaw(best)
 end
 
 function module.max(...: buffer): buffer
 	local count = select('#', ...)
 	if count == 0 then return cloneRaw(NAN) end
 	local best = select(1, ...)
+	if breadi8(best, SIGN_OFFSET) == NAN_SIGN then return cloneRaw(NAN) end
 	for i = 2, count do
 		local v = select(i, ...)
+		if breadi8(v, SIGN_OFFSET) == NAN_SIGN then return cloneRaw(NAN) end
 		if cmpRaw(v, best) > 0 then best = v end
 	end
-	return best
+	return cloneRaw(best)
 end
 
 function module.floor(val: buffer): buffer
-	local a = val
-	local s = breadi8(a, SIGN_OFFSET)
-	if s == NAN_SIGN then return setRaw(a, NAN_SIGN, 0) end
-	if s == 0 then return a end
-	local l = breadf64(a, LOG_OFFSET)
-	if l == huge or l >= 16 then return a end
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN then return makeFast(NAN_SIGN, 0) end
+	if s == 0 then return makeFast(0, 0) end
+	local l = breadf64(val, LOG_OFFSET)
+	if l == huge or l >= 16 then return makeFast(s, l) end
 	if l < 0 then
-		if s < 0 then return setRaw(a, -1, 0) end
-		return setRaw(a, 0, 0)
+		if s < 0 then return makeFast(-1, 0) end
+		return makeFast(0, 0)
 	end
 	local n = 10 ^ l
 	local v = if s < 0 then -ceil(n) else floor(n)
-	if v == 0 then return setRaw(a, 0, 0) end
-	return setRaw(a, signm(v), log10(abs(v)))
+	if v == 0 then return makeFast(0, 0) end
+	return makeFast(if v < 0 then -1 else 1, log10(abs(v)))
 end
 
 function module.ceil(val: buffer): buffer
-	local a = val
-	local s = breadi8(a, SIGN_OFFSET)
-	if s == NAN_SIGN then return setRaw(a, NAN_SIGN, 0) end
-	if s == 0 then return a end
-	local l = breadf64(a, LOG_OFFSET)
-	if l == huge or l >= 16 then return a end
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN then return makeFast(NAN_SIGN, 0) end
+	if s == 0 then return makeFast(0, 0) end
+	local l = breadf64(val, LOG_OFFSET)
+	if l == huge or l >= 16 then return makeFast(s, l) end
 	if l < 0 then
-		if s > 0 then return setRaw(a, 1, 0) end
-		return setRaw(a, 0, 0)
+		if s > 0 then return makeFast(1, 0) end
+		return makeFast(0, 0)
 	end
 	local n = 10 ^ l
 	local v = if s < 0 then -floor(n) else ceil(n)
-	if v == 0 then return setRaw(a, 0, 0) end
-	return setRaw(a, signm(v), log10(abs(v)))
+	if v == 0 then return makeFast(0, 0) end
+	return makeFast(if v < 0 then -1 else 1, log10(abs(v)))
 end
 
 function module.round(val: buffer): buffer
-	local a = val
-	local s = breadi8(a, SIGN_OFFSET)
-	if s == NAN_SIGN then return setRaw(a, NAN_SIGN, 0) end
-	if s == 0 then return a end
-	local l = breadf64(a, LOG_OFFSET)
-	if l == huge or l >= 16 then return a end
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN then return makeFast(NAN_SIGN, 0) end
+	if s == 0 then return makeFast(0, 0) end
+	local l = breadf64(val, LOG_OFFSET)
+	if l == huge or l >= 16 then return makeFast(s, l) end
 	local n = round(s * 10 ^ l)
-	if n == 0 then return setRaw(a, 0, 0) end
-	return setRaw(a, signm(n), log10(abs(n)))
+	if n == 0 then return makeFast(0, 0) end
+	return makeFast(if n < 0 then -1 else 1, log10(abs(n)))
 end
 
 function module.mod(val1: buffer, val2: buffer): buffer
-	local a = val1
-	local b = val2
-	local s1 = breadi8(a, SIGN_OFFSET)
-	local s2 = breadi8(b, SIGN_OFFSET)
-	if s1 == NAN_SIGN or s2 == NAN_SIGN or s2 == 0 then
-		return setRaw(a, NAN_SIGN, 0)
-	end
-	if s1 == 0 then return a end
-	local l1 = breadf64(a, LOG_OFFSET)
-	local l2 = breadf64(b, LOG_OFFSET)
+	local s1 = breadi8(val1, SIGN_OFFSET)
+	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN or s2 == 0 then return makeFast(NAN_SIGN, 0) end
+	if s1 == 0 then return makeFast(0, 0) end
+	local l1 = breadf64(val1, LOG_OFFSET)
+	local l2 = breadf64(val2, LOG_OFFSET)
 	local d = l1 - l2
-	if d < 0 then return a end
-	if d > 15 then
-		return setRaw(a, NAN_SIGN, 0)
-	end
+	if d < 0 then return makeFast(s1, l1) end
+	if d > 15 then return makeFast(NAN_SIGN, 0) end
 	local q = floor((s1 / s2) * 10 ^ d)
 	local factor = 1 - q * (s2 / s1) * 10 ^ (-d)
-	if factor == 0 then return setRaw(a, 0, 0) end
-	return setRaw(a, signm(s1 * factor), l1 + log10(abs(factor)))
+	if factor == 0 then return makeFast(0, 0) end
+	return makeFast(if s1 * factor < 0 then -1 else 1, l1 + log10(abs(factor)))
 end
 
 function module.lbencode(val: buffer): number
@@ -862,25 +1318,21 @@ function module.lbdecode(encoded: number): buffer
 end
 
 function module.root(val1: buffer, val2: buffer): buffer
-	local a = val1
-	local b = val2
-	local s1 = breadi8(a, SIGN_OFFSET)
-	local s2 = breadi8(b, SIGN_OFFSET)
-	if s1 == NAN_SIGN or s2 <= 0 then return setRaw(a, NAN_SIGN, 0) end
-	if s1 == 0 then return setRaw(a, 0, 0) end
-	local l2 = breadf64(b, LOG_OFFSET)
-	if l2 == huge then return setRaw(a, 1, 0) end
+	local s1 = breadi8(val1, SIGN_OFFSET)
+	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 <= 0 then return makeFast(NAN_SIGN, 0) end
+	if s1 == 0 then return makeFast(0, 0) end
+	local l2 = breadf64(val2, LOG_OFFSET)
+	if l2 == huge then return makeFast(1, 0) end
 	local degree = 10 ^ l2
 	local outSign = 1
 	if s1 < 0 then
-		if degree == huge then return setRaw(a, NAN_SIGN, 0) end
+		if degree == huge then return makeFast(NAN_SIGN, 0) end
 		local nearest = round(degree)
-		if abs(degree - nearest) > 1e-10 or nearest % 2 == 0 then
-			return setRaw(a, NAN_SIGN, 0)
-		end
+		if abs(degree - nearest) > 1e-10 or nearest % 2 == 0 then return makeFast(NAN_SIGN, 0) end
 		outSign = -1
 	end
-	return setRaw(a, outSign, breadf64(a, LOG_OFFSET) / degree)
+	return makeFast(outSign, breadf64(val1, LOG_OFFSET) / degree)
 end
 
 function module.toNumber(val: buffer): number
@@ -913,149 +1365,178 @@ end
 
 function module.neg(val: buffer): buffer
 	local s = breadi8(val, SIGN_OFFSET)
-	if s == NAN_SIGN or s == 0 then
-		return val
-	end
-	bwritei8(val, SIGN_OFFSET, -s)
-	return val
+	if s == NAN_SIGN then return makeFast(NAN_SIGN, 0) end
+	if s == 0 then return makeFast(0, 0) end
+	return makeFast(-s, breadf64(val, LOG_OFFSET))
 end
 
 function module.recip(val: buffer): buffer
 	local s = breadi8(val, SIGN_OFFSET)
-	if s == NAN_SIGN then
-		return val
-	end
-	if s == 0 then
-		return setRaw(val, 1, huge)
-	end
-
+	if s == NAN_SIGN then return makeFast(NAN_SIGN, 0) end
+	if s == 0 then return makeFast(1, huge) end
 	local l = breadf64(val, LOG_OFFSET)
-	if l == huge then
-		return setRaw(val, 0, 0)
-	end
-	return setRaw(val, s, -l)
+	if l == huge then return makeFast(0, 0) end
+	return makeFast(s, -l)
 end
 
 function module.cbrt(val: buffer): buffer
 	local s = breadi8(val, SIGN_OFFSET)
-	if s == NAN_SIGN or s == 0 then
-		return val
-	end
-	return setRaw(val, s, breadf64(val, LOG_OFFSET) / 3)
+	if s == NAN_SIGN then return makeFast(NAN_SIGN, 0) end
+	if s == 0 then return makeFast(0, 0) end
+	return makeFast(s, breadf64(val, LOG_OFFSET) / 3)
 end
 
 function module.powf(val: buffer, power: number): buffer
+	local out = bcreate(SIZE)
 	local s = breadi8(val, SIGN_OFFSET)
 	if s == NAN_SIGN or power ~= power then
-		return setRaw(val, NAN_SIGN, 0)
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
 	end
 	if power == 0 then
-		return setRaw(val, 1, 0)
+		bwritei8(out, SIGN_OFFSET, 1); bwritef64(out, LOG_OFFSET, 0); return out
 	end
 	if s == 0 then
-		if power < 0 then return setRaw(val, 1, huge) end
-		return val
+		if power < 0 then
+			bwritei8(out, SIGN_OFFSET, 1); bwritef64(out, LOG_OFFSET, huge)
+		else
+			bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0)
+		end
+		return out
 	end
 
 	local outSign = 1
 	if s < 0 then
 		if power == huge or power == -huge then
-			return setRaw(val, NAN_SIGN, 0)
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
 		end
 		local nearest = round(power)
 		if abs(power - nearest) > 1e-10 then
-			return setRaw(val, NAN_SIGN, 0)
+			bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
 		end
-		if nearest % 2 ~= 0 then
-			outSign = -1
-		end
+		if nearest % 2 ~= 0 then outSign = -1 end
 	end
 
 	local resultLog = breadf64(val, LOG_OFFSET) * power
-	if resultLog ~= resultLog then return setRaw(val, NAN_SIGN, 0) end
-	if resultLog == -huge then return setRaw(val, 0, 0) end
-	return setRaw(val, outSign, resultLog)
+	if resultLog ~= resultLog then
+		bwritei8(out, SIGN_OFFSET, NAN_SIGN); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	if resultLog == -huge then
+		bwritei8(out, SIGN_OFFSET, 0); bwritef64(out, LOG_OFFSET, 0); return out
+	end
+	bwritei8(out, SIGN_OFFSET, outSign)
+	bwritef64(out, LOG_OFFSET, resultLog)
+	return out
 end
 
 function module.log2(val: buffer): buffer
 	local s = breadi8(val, SIGN_OFFSET)
-	if s <= 0 then
-		return setRaw(val, NAN_SIGN, 0)
-	end
-
+	if s <= 0 then return makeFast(NAN_SIGN, 0) end
 	local l = breadf64(val, LOG_OFFSET)
-	if l == 0 then
-		return setRaw(val, 0, 0)
-	end
-	if l == huge then
-		return setRaw(val, 1, huge)
-	end
-
+	if l == 0 then return makeFast(0, 0) end
+	if l == huge then return makeFast(1, huge) end
 	local result = l / LOG10_2
-	return setRaw(val, signm(result), log10(abs(result)))
+	return makeFast(if result < 0 then -1 else 1, log10(abs(result)))
 end
 
 function module.toSuffix(val: buffer): string
 	local s = breadi8(val, SIGN_OFFSET)
-	local l = breadf64(val, LOG_OFFSET)
-
 	if s == NAN_SIGN then return "NaN" end
 	if s == 0 then return "0" end
+
+	local l = breadf64(val, LOG_OFFSET)
 	if l == huge then return if s < 0 then "-Inf" else "Inf" end
 
-	local prefix = if s < 0 then "-" else ""
+	if l >= 3 then
+		if l < 3000 then
+			local whole = floor(l)
+			local k = whole // 3
+			local suffix = suffixCache[k]
+			if l == whole then
+				local body = suffixExactMantissa[whole % 3 + 1] .. suffix
+				return if s < 0 then "-" .. body else body
+			end
 
-	if l >= 3 and l < 3000 then
-		local whole = floor(l)
-		local k = whole // 3
-
-		if l == whole then
-			return prefix .. suffixExactMantissa[whole % 3 + 1] .. suffixCache[k]
+			local value100 = floor(10 ^ (l - k * 3) * 100 + 1e-10)
+			local text = suffixFastText[value100]
+			if text == nil then
+				local w = value100 // 100
+				local frac = value100 - w * 100
+				if frac == 0 then text = tostring(w)
+				else text = tostring(w) .. suffixFractionText[frac] end
+			end
+			local body = text .. suffix
+			return if s < 0 then "-" .. body else body
 		end
 
-		local value100 = suffixTruncated100(10 ^ (l - k * 3))
-		return prefix .. suffixHundredthsText(value100) .. suffixCache[k]
-	end
-
-	if l >= 3000 then
 		local exponent = floor(l)
-
 		if l == exponent then
-			return prefix .. "1e" .. tostring(exponent)
+			local body = "1e" .. tostring(exponent)
+			return if s < 0 then "-" .. body else body
 		end
-
-		local value100 = suffixTruncated100(10 ^ (l - exponent))
-		return prefix .. suffixHundredthsText(value100) .. "e" .. tostring(exponent)
+		local value100 = floor(10 ^ (l - exponent) * 100 + 1e-10)
+		local text = suffixFastText[value100]
+		if text == nil then
+			local w = value100 // 100
+			local frac = value100 - w * 100
+			if frac == 0 then text = tostring(w)
+			else text = tostring(w) .. suffixFractionText[frac] end
+		end
+		local body = text .. "e" .. tostring(exponent)
+		return if s < 0 then "-" .. body else body
 	end
 
 	if l >= -2 then
-		local value100 = suffixTruncated100(10 ^ l)
+		local value100 = floor(10 ^ l * 100 + 1e-10)
 		if value100 == 0 then return "0" end
-		return prefix .. suffixHundredthsText(value100)
+		local text = suffixFastText[value100]
+		if text == nil then
+			local w = value100 // 100
+			local frac = value100 - w * 100
+			if frac == 0 then text = tostring(w)
+			else text = tostring(w) .. suffixFractionText[frac] end
+		end
+		return if s < 0 then "-" .. text else text
 	end
 
 	if l >= -3 then
 		local value1000 = floor(10 ^ l * 1000 + 1e-10)
 		if value1000 <= 0 then return "0" end
-		return prefix .. tostring(value1000 / 1000)
+		local body = tostring(value1000 / 1000)
+		return if s < 0 then "-" .. body else body
 	end
 
 	if l > -3000 then
 		local inv = -l
 		local whole = floor(inv)
 		local k = whole // 3
-
+		local suffix = suffixCache[k]
 		if inv == whole then
-			return prefix .. "1/" .. suffixExactMantissa[whole % 3 + 1] .. suffixCache[k]
+			local body = "1/" .. suffixExactMantissa[whole % 3 + 1] .. suffix
+			return if s < 0 then "-" .. body else body
 		end
-
-		local value100 = suffixTruncated100(10 ^ (inv - k * 3))
-		return prefix .. "1/" .. suffixHundredthsText(value100) .. suffixCache[k]
+		local value100 = floor(10 ^ (inv - k * 3) * 100 + 1e-10)
+		local text = suffixFastText[value100]
+		if text == nil then
+			local w = value100 // 100
+			local frac = value100 - w * 100
+			if frac == 0 then text = tostring(w)
+			else text = tostring(w) .. suffixFractionText[frac] end
+		end
+		local body = "1/" .. text .. suffix
+		return if s < 0 then "-" .. body else body
 	end
 
 	local exponent = floor(l)
-	local value100 = suffixTruncated100(10 ^ (l - exponent))
-	return prefix .. suffixHundredthsText(value100) .. "e" .. tostring(exponent)
+	local value100 = floor(10 ^ (l - exponent) * 100 + 1e-10)
+	local text = suffixFastText[value100]
+	if text == nil then
+		local w = value100 // 100
+		local frac = value100 - w * 100
+		if frac == 0 then text = tostring(w)
+		else text = tostring(w) .. suffixFractionText[frac] end
+	end
+	local body = text .. "e" .. tostring(exponent)
+	return if s < 0 then "-" .. body else body
 end
 
 function module.toESuffix(val: buffer, switchAt: number?): string
@@ -1095,7 +1576,7 @@ function module.format(val: buffer, digits: number?, hyperAt: number?): string
 	if l == huge then return if s < 0 then "-Inf" else "Inf" end
 
 	local d = digits
-	
+
 	if (d == nil or d == 2) and hyperAt == nil then
 		if l >= 6 and l < 3000 then
 			local whole = floor(l)
@@ -1241,13 +1722,13 @@ end
 
 function module.toStr(val: buffer): string
 	local s = breadi8(val, SIGN_OFFSET)
-	local l = breadf64(val, LOG_OFFSET)
 	if s == NAN_SIGN then return "NaN" end
 	if s == 0 then return "0e0" end
+	local l = breadf64(val, LOG_OFFSET)
 	if l == huge then return if s > 0 then "Inf" else "-Inf" end
 	local exponent = floor(l)
 	local man = 10 ^ (l - exponent)
-	if s < 0 then man = -man end
+	if s < 0 then return "-" .. tostring(man) .. "e" .. tostring(exponent) end
 	return tostring(man) .. "e" .. tostring(exponent)
 end
 
@@ -1346,7 +1827,7 @@ local function maxBuyCore(funds: buffer, cost: buffer, multiplier: buffer): (num
 		local amount = if ratioLog > 308.25471555991675 then huge else floor(10 ^ ratioLog)
 		return amount, ratioLog, cloneRaw(funds)
 	end
-	
+
 	if lm < 0 then
 		return 0, -huge, cloneRaw(NAN)
 	end
@@ -1376,7 +1857,7 @@ local function maxBuyCore(funds: buffer, cost: buffer, multiplier: buffer): (num
 		end
 
 		local total = geometricTotalFromCount(lc, lm, mMinusOneLog, amount)
-		
+
 		while amount > 0 and cmpRaw(total, funds) > 0 do
 			amount -= 1
 			if amount <= 0 then
@@ -1420,6 +1901,9 @@ function module.maxBuyBnum(val1: buffer, val2: buffer, multi: buffer): (buffer, 
 end
 
 function module.canAfford(funds: buffer, cost: buffer): boolean
+	if breadi8(funds, SIGN_OFFSET) == NAN_SIGN or breadi8(cost, SIGN_OFFSET) == NAN_SIGN then
+		return false
+	end
 	return cmpRaw(funds, cost) >= 0
 end
 
@@ -1676,31 +2160,31 @@ function module.linearNumber(base: buffer, increment: buffer, level: number): bu
 end
 
 function module.softCap(val: buffer, cap: buffer, power: buffer): buffer
-	if cmpRaw(val, cap) <= 0 then
-		return val
-	end
-
 	local sv = breadi8(val, SIGN_OFFSET)
 	local sc = breadi8(cap, SIGN_OFFSET)
 	local sp = breadi8(power, SIGN_OFFSET)
-	if sv <= 0 or sc <= 0 or sp == NAN_SIGN then
+	if sv == NAN_SIGN or sc == NAN_SIGN or sp == NAN_SIGN then
 		return cloneRaw(NAN)
+	end
+	if sv <= 0 or sc <= 0 then
+		return cloneRaw(NAN)
+	end
+	if cmpRaw(val, cap) <= 0 then
+		return cloneRaw(val)
 	end
 	if sp == 0 then
 		return cloneRaw(cap)
 	end
 
 	local lp = breadf64(power, LOG_OFFSET)
-	if lp > 308.25471555991675 then
-		return if sp > 0 then cloneRaw(INF) else cloneRaw(cap)
+	if lp == huge then
+		return if sp > 0 then cloneRaw(INF) else cloneRaw(ZERO)
 	end
 
 	local p = sp * 10 ^ lp
 	local resultLog = breadf64(cap, LOG_OFFSET)
 		+ (breadf64(val, LOG_OFFSET) - breadf64(cap, LOG_OFFSET)) * p
 
-	if resultLog == huge then return cloneRaw(INF) end
-	if resultLog == -huge then return cloneRaw(ZERO) end
 	return makeRaw(1, resultLog)
 end
 
@@ -1720,12 +2204,14 @@ function module.milestone(val: buffer, step: buffer, bonus: buffer): buffer
 end
 
 function module.scaleCurve(val1: buffer, base: buffer, exponent: buffer, mode: ScaleMode): buffer
-	local a = val1
+	local a = cloneRaw(val1)
 	local b = base
 	local e = exponent
 	local s1 = breadi8(a, SIGN_OFFSET)
 	local s2 = breadi8(b, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then return setRaw(a, NAN_SIGN, 0) end
 	if s1 <= 0 or s2 <= 0 then return setRaw(a, 1, 0) end
+	if mode ~= "linear" and mode ~= "exp" and mode ~= "sigmoid" then return setRaw(a, NAN_SIGN, 0) end
 	local l1 = breadf64(a, LOG_OFFSET)
 	local l2 = breadf64(b, LOG_OFFSET)
 	if l1 <= l2 then return setRaw(a, 1, 0) end
@@ -1750,6 +2236,7 @@ function module.scaleCurve(val1: buffer, base: buffer, exponent: buffer, mode: S
 		return setRaw(a, 1, log10(result))
 	end
 	local se = breadi8(e, SIGN_OFFSET)
+	if se == NAN_SIGN then return setRaw(a, NAN_SIGN, 0) end
 	local le = breadf64(e, LOG_OFFSET)
 	local exVal = if se == 0 then 0 else se * 10 ^ le
 	local powLog = tLog * exVal
@@ -1758,10 +2245,11 @@ function module.scaleCurve(val1: buffer, base: buffer, exponent: buffer, mode: S
 end
 
 function module.progress(val1: buffer, goal: buffer, modes: ScaleMode): buffer
-	local a = val1
+	local a = cloneRaw(val1)
 	local g = goal
 	local s1 = breadi8(a, SIGN_OFFSET)
 	local s2 = breadi8(g, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN then return setRaw(a, NAN_SIGN, 0) end
 	if s2 <= 0 then return setRaw(a, 0, 0) end
 	local ratio = 0
 	if s1 > 0 then
@@ -1779,9 +2267,12 @@ function module.progress(val1: buffer, goal: buffer, modes: ScaleMode): buffer
 	elseif modes == 'exp' then
 		scale = ratio ^ 2
 	elseif modes == 'sigmoid' then
-		scale = 1 / (1 + expm(-6 * (ratio - 0.5)))
+		local low = 1 / (1 + expm(3))
+		local high = 1 / (1 + expm(-3))
+		local raw = 1 / (1 + expm(-6 * (ratio - 0.5)))
+		scale = (raw - low) / (high - low)
 	else
-		scale = ratio
+		return setRaw(a, NAN_SIGN, 0)
 	end
 	if scale <= 0 then return setRaw(a, 0, 0) end
 	return setRaw(a, 1, log10(scale))
@@ -1813,48 +2304,56 @@ function module.imod(val1: buffer, val2: buffer): buffer
 end
 
 function module.intdiv(val1: buffer, val2: buffer): buffer
-	local a = val1
-	local b = val2
-	local s1 = breadi8(a, SIGN_OFFSET)
-	local s2 = breadi8(b, SIGN_OFFSET)
-	if s1 == NAN_SIGN or s2 == NAN_SIGN or s2 == 0 then
-		return setRaw(a, NAN_SIGN, 0)
-	end
-	if s1 == 0 then return setRaw(a, 0, 0) end
+	local s1 = breadi8(val1, SIGN_OFFSET)
+	local s2 = breadi8(val2, SIGN_OFFSET)
+	if s1 == NAN_SIGN or s2 == NAN_SIGN or s2 == 0 then return makeFast(NAN_SIGN, 0) end
+	if s1 == 0 then return makeFast(0, 0) end
 	local s = s1 * s2
-	local l = breadf64(a, LOG_OFFSET) - breadf64(b, LOG_OFFSET)
-	if l >= 16 then return setRaw(a, s, l) end
+	local l = breadf64(val1, LOG_OFFSET) - breadf64(val2, LOG_OFFSET)
+	if l == -huge then return makeFast(0, 0) end
+	if l >= 16 then return makeFast(s, l) end
 	local q = s * 10 ^ l
 	local n = floor(q)
-	if n == 0 then return setRaw(a, 0, 0) end
-	return setRaw(a, signm(n), log10(abs(n)))
+	if n == 0 then return makeFast(0, 0) end
+	return makeFast(if n < 0 then -1 else 1, log10(abs(n)))
 end
 
 function module.clamp(val1: buffer, minVal: buffer, maxVal: buffer): buffer
-	local a = val1
 	local mn = minVal
 	local mx = maxVal
+	if breadi8(val1, SIGN_OFFSET) == NAN_SIGN or breadi8(mn, SIGN_OFFSET) == NAN_SIGN or breadi8(mx, SIGN_OFFSET) == NAN_SIGN then
+		return cloneRaw(NAN)
+	end
 	if cmpRaw(mn, mx) > 0 then mn, mx = mx, mn end
-	if cmpRaw(a, mn) < 0 then return mn end
-	if cmpRaw(a, mx) > 0 then return mx end
-	return a
+	if cmpRaw(val1, mn) < 0 then return cloneRaw(mn) end
+	if cmpRaw(val1, mx) > 0 then return cloneRaw(mx) end
+	return cloneRaw(val1)
 end
 
 function module.dynamicCost(cost: buffer, owned: buffer, scale: buffer, method: 'exp' | 'linear' | 'hybrid'): buffer
-	local c = cost
+	local c = cloneRaw(cost)
 	local o = owned
 	local s = scale
 	local sc = breadi8(c, SIGN_OFFSET)
 	local so = breadi8(o, SIGN_OFFSET)
 	local ss = breadi8(s, SIGN_OFFSET)
-	if sc <= 0 or so < 0 or ss <= 0 then return setRaw(c, NAN_SIGN, 0) end
+	if sc == NAN_SIGN or so == NAN_SIGN or ss == NAN_SIGN or sc <= 0 or so < 0 or ss <= 0 then
+		return setRaw(c, NAN_SIGN, 0)
+	end
+	if method ~= 'exp' and method ~= 'linear' and method ~= 'hybrid' then
+		return setRaw(c, NAN_SIGN, 0)
+	end
+
 	local lc = breadf64(c, LOG_OFFSET)
 	local lo = breadf64(o, LOG_OFFSET)
 	local ls = breadf64(s, LOG_OFFSET)
-	local ownedValue = if so == 0 then 0 else 10 ^ lo
+	local ownedValue = if so == 0 then 0 elseif lo > 308.25471555991675 then huge else 10 ^ lo
+
 	if method == 'exp' then
+		if so == 0 or ls == 0 then return c end
 		return setRaw(c, 1, lc + ownedValue * ls)
 	end
+
 	local linearLog
 	if so == 0 then
 		linearLog = -huge
@@ -1862,39 +2361,49 @@ function module.dynamicCost(cost: buffer, owned: buffer, scale: buffer, method: 
 		linearLog = ls + lo
 	end
 	if method == 'linear' then
-		if linearLog == -huge then return setRaw(c, 1, lc) end
+		if linearLog == -huge then return c end
 		local d = linearLog - lc
-		if d > 16 then return setRaw(c, 1, linearLog) end
-		if d < -16 then return setRaw(c, 1, lc) end
+		if d > DOMINANCE then return setRaw(c, 1, linearLog) end
+		if d < -DOMINANCE then return c end
 		if d >= 0 then return setRaw(c, 1, linearLog + log10(1 + 10 ^ (-d))) end
 		return setRaw(c, 1, lc + log10(1 + 10 ^ d))
 	end
-	local expLog = lc + ownedValue * ls
+
+	local expLog
+	if so == 0 or ls == 0 then
+		expLog = lc
+	else
+		expLog = lc + ownedValue * ls
+	end
+	if expLog ~= expLog then return setRaw(c, NAN_SIGN, 0) end
 	if linearLog == -huge then return setRaw(c, 1, expLog) end
+	if expLog == -huge then return setRaw(c, 1, linearLog) end
+	if expLog == huge then return setRaw(c, 1, huge) end
 	local d = linearLog - expLog
-	if d > 16 then return setRaw(c, 1, linearLog) end
-	if d < -16 then return setRaw(c, 1, expLog) end
+	if d > DOMINANCE then return setRaw(c, 1, linearLog) end
+	if d < -DOMINANCE then return setRaw(c, 1, expLog) end
 	if d >= 0 then return setRaw(c, 1, linearLog + log10(1 + 10 ^ (-d))) end
 	return setRaw(c, 1, expLog + log10(1 + 10 ^ d))
 end
 
 function module.abs(val: buffer): buffer
-	local a = val
-	local s = breadi8(a, SIGN_OFFSET)
-	if s == NAN_SIGN then return a end
-	if s < 0 then bwritei8(a, SIGN_OFFSET, -s) end
-	return a
+	local s = breadi8(val, SIGN_OFFSET)
+	if s == NAN_SIGN then return makeFast(NAN_SIGN, 0) end
+	if s == 0 then return makeFast(0, 0) end
+	return makeFast(1, breadf64(val, LOG_OFFSET))
 end
 
 function module.eta(curr: buffer, goal: buffer, rate: buffer): buffer
-	local c = curr
+	local c = cloneRaw(curr)
 	local g = goal
 	local r = rate
-	if breadi8(r, SIGN_OFFSET) <= 0 then return setRaw(c, 1, huge) end
-	if cmpRaw(c, g) >= 0 then return setRaw(c, 0, 0) end
-	local sg = breadi8(g, SIGN_OFFSET)
-	if sg <= 0 then return setRaw(c, 0, 0) end
 	local sc = breadi8(c, SIGN_OFFSET)
+	local sg = breadi8(g, SIGN_OFFSET)
+	local sr = breadi8(r, SIGN_OFFSET)
+	if sc == NAN_SIGN or sg == NAN_SIGN or sr == NAN_SIGN then return setRaw(c, NAN_SIGN, 0) end
+	if sr <= 0 then return setRaw(c, 1, huge) end
+	if cmpRaw(c, g) >= 0 or sg <= 0 then return setRaw(c, 0, 0) end
+
 	local lg = breadf64(g, LOG_OFFSET)
 	local diffLog
 	if sc <= 0 then
@@ -1903,13 +2412,15 @@ function module.eta(curr: buffer, goal: buffer, rate: buffer): buffer
 		else
 			local lc = breadf64(c, LOG_OFFSET)
 			local d = lc - lg
-			if d > 16 then diffLog = lc else diffLog = lg + log10(1 + 10 ^ d) end
+			if d > DOMINANCE then diffLog = lc else diffLog = lg + log10(1 + 10 ^ d) end
 		end
 	else
 		local lc = breadf64(c, LOG_OFFSET)
 		local d = lc - lg
-		if d < -16 then
+		if d < -DOMINANCE then
 			diffLog = lg
+		elseif d >= 0 then
+			return setRaw(c, 0, 0)
 		else
 			diffLog = lg + log10(1 - 10 ^ d)
 		end
@@ -1941,13 +2452,21 @@ function module.isNegative(val: buffer): boolean
 	return breadi8(val, SIGN_OFFSET) == -1
 end
 
+function module.isValid(val: any): boolean
+	if type(val) ~= "buffer" or buffer.len(val) < SIZE then return false end
+	local s = breadi8(val, SIGN_OFFSET)
+	local l = breadf64(val, LOG_OFFSET)
+	if s ~= NAN_SIGN and s ~= -1 and s ~= 0 and s ~= 1 then return false end
+	if l ~= l then return false end
+	if s == NAN_SIGN then return l == 0 end
+	if s == 0 then return l == 0 end
+	return l ~= -huge
+end
+
 function module.isBnum(val: any): boolean
 	return type(val) == "buffer" and buffer.len(val) >= SIZE
 end
 
--- v1.2 hot-path rule:
--- Core math functions accept Bnum buffers directly and never call ensure().
--- Use module.ensure()/fromNumber()/fromString() at API boundaries only.
 module.compat = {}
 
 function module.compat.add(a: any, b: any): buffer
@@ -1964,6 +2483,18 @@ function module.compat.div(a: any, b: any): buffer
 end
 function module.compat.pow(a: any, b: any): buffer
 	return module.pow(module.ensure(a), module.ensure(b))
+end
+function module.compat.powf(a: any, power: number): buffer
+	return module.powf(module.ensure(a), power)
+end
+function module.compat.sqrt(a: any): buffer
+	return module.sqrt(module.ensure(a))
+end
+function module.compat.log10(a: any): buffer
+	return module.log10(module.ensure(a))
+end
+function module.compat.abs(a: any): buffer
+	return module.abs(module.ensure(a))
 end
 function module.compat.cmp(a: any, b: any): number
 	return module.cmp(module.ensure(a), module.ensure(b))
