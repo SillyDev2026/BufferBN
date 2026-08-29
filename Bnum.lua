@@ -61,7 +61,7 @@ bwritei8(NEG_INF, SIGN_OFFSET, -1)
 bwritef64(NEG_INF, LOG_OFFSET, huge)
 
 local module = {
-	VERSION = "1.2.1",
+	VERSION = "1.2.9",
 	STORAGE_VERSION = 1,
 	SIZE = SIZE,
 }
